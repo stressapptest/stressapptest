@@ -19,9 +19,14 @@ Many hardware issues reproduce infrequently, or only under corner cases. The the
 
 stressapptest is a userspace test, primarily composed of threads doing memory copies and directIO disk read/write. It allocates a large block of memory (typically 85% of the total memory on the machine), and each thread will choose randomized blocks of memory to copy, or to write to disk. Typically there are two threads per processor, and two threads for each disk. Result checking is done as the test proceeds by CRCing the data as it is copied.
 
+
+==How to Install==
+
+check the [InstallationGuide Installation Guide]
+
 ==How to Run==
 
-check the UserGuide
+check the [UserGuide User Guide]
 
 ==Detailed Design==
 
