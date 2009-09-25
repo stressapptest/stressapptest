@@ -1,15 +1,14 @@
-#summary Theory under the stressapptest
+#summary Theory under the Stressful Application Test
 
 =Theory=
 
 ==Transactions per second==
 
-The simplest strategy that SAT uses for memory testing, is that given a naive probability of P that any memory transaction fails, an effective test should maximize the number of potentially failing transactions per unit of time in order to see the greatest number of failures.
+The simplest strategy that Stressful Application Test (or stressapptest) uses for memory testing, is that given a naive probability of P that any memory transaction fails, an effective test should maximize the number of potentially failing transactions per unit of time in order to see the greatest number of failures.
 
 ==Randomized transactions==
 
-Given the untestably large space of sequences of transactions, and the possibility that some unknown sequence of transactions may result in an error, SAT attempts to create a randomized variety of transactions. It is intended that most sequences of memory access should be unique, even in an arbitrarily long run of SAT. Each transaction is a randomized combination of data pattern and address, with the previous and following 
-transactions split between sequential transactions of the same data pattern, and randomized data pattern and address on the same bus.
+Given the untestably large space of sequences of transactions, and the possibility that some unknown sequence of transactions may result in an error, stressapptest attempts to create a randomized variety of transactions. It is intended that most sequences of memory access should be unique, even in an arbitrarily long run of stressapptest. Each transaction is a randomized combination of data pattern and address, with the previous and following transactions split between sequential transactions of the same data pattern, and randomized data pattern and address on the same bus.
 
 This is achieved by having many threads of execution sequentially accessing random locations in memory. This interleaving should cause the memory bus to receive a large variety or transaction sequences. This results in randomized address line testing, and a large variety of bank/row switching.
 
@@ -26,4 +25,4 @@ Some examples:
 
 ==Stress testing==
 
-SAT performs many transactions in a short period of time, which can trigger problems related to system stress. Potential failures might be hardware queues filling or getting jammed, thermal issues, power issues, deadlock issues, starvation issues, coherency issues, etc.
+stressapptest performs many transactions in a short period of time, which can trigger problems related to system stress. Potential failures might be hardware queues filling or getting jammed, thermal issues, power issues, deadlock issues, starvation issues, coherency issues, etc.
