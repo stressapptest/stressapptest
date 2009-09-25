@@ -1,3 +1,51 @@
 #summary Stressful Application Test user guide
 
+=User Guide=
+
 ==Executing Stressful application test== 
+
+To execute, just type
+
+{{{sat}}}
+
+on a shell and it will start executing with the default parameters. This usually is not enough for a regular test, so you may want to pass some command line arguments in order to get a real test.
+
+==Command line arguments==
+
+You can control the behavior of stressapptest just passing command-line arguments. Here is a list of the most common arguments:
+
+  * `-M mbytes` : megabytes of ram to test
+  * `-s seconds` : number of seconds to run
+  * `-m threads` : number of memory copy threads to run
+  * `-i threads` : number of memory invert threads to run
+  * `-C threads` : number of memory CPU stress threads to run
+  * `--findfiles` : find locations to do disk IO automatically
+  * `-d device` : add a direct write disk thread with block device (or file) 'device'
+  * `-f filename` : add a disk thread with tempfile 'filename'
+  * `-l logfile` : log output to file 'logfile'
+  * `--max_errors n` : exit early after finding 'n' errors
+  * `-v level` : verbosity (0-20), default is 8
+  * `-W` : Use more CPU-stressful memory copy
+  * `-A` : run in degraded mode on incompatible systems
+  * `-p pagesize` : size in bytes of memory chunks
+  * `--filesize size` : size of disk IO tempfiles
+  * `-n ipaddr` : add a network thread connecting to system at 'ipaddr'
+  * `--listen` : run a thread to listen for and respond to network threads.
+  * `--no_errors` : run without checking for errors
+  * `--force_errors` : inject false errors to test error handling
+  * `-F` : don't result check each transaction
+  * `--read-block-size` : size of block for reading (-d)
+  * `--write-block-size` :  size of block for writing (-d). If not defined, the size of block for writing will be defined as the size of block for reading
+  * `--segment-size` : size of segments to split disk into (-d)
+  * `--cache-size` : size of disk cache (-d)
+  * `--blocks-per-segment` : number of blocks to read/write per segment per iteration (-d)
+  * `--read-threshold` : maximum time (in us) a block read should take (-d)
+  * `--write-threshold` : maximum time (in us) a block write should take (-d)
+  * `--random-threads` :  number of random threads for each disk write thread (-d)
+  * `--destructive` : write/wipe disk partition (-d)
+  * `--cc_test` : do the cache coherency testing
+  * `--cc_inc_count` : number of times to increment the cacheline's member
+  * `--cc_line_count` : number of cache line sized data structures to allocate for the cache coherency threads to operate
+  * `--paddr_base` : allocate memory starting from this address
+  * `--pause_delay` : delay (in seconds) between power spikes
+  * `--pause_duration` : duration (in seconds) of each pause
