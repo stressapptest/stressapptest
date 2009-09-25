@@ -1,11 +1,10 @@
-#summary An introduction to stressapptest
-=Introduction=
+#summary An introduction to stressful application test
 
 ==Objective==
 
-Stressful Application Test (stressapptest) tries to maximize randomized traffic to memory from processor and I/O, with the intent of creating a realistic high load situation
+Stressful Application Test (or stressapptest) tries to maximize randomized traffic to memory from processor and I/O, with the intent of creating a realistic high load situation
 
-(stressapptest) may be used for various purposes:
+stressapptest may be used for various purposes:
    * Stress test: as described here.
    * Hardware qualification and debugging.
    * Memory interface test: see the [Theory] behind this.
@@ -19,6 +18,9 @@ Many hardware issues reproduce infrequently, or only under corner cases. The the
 
 stressapptest is a userspace test, primarily composed of threads doing memory copies and directIO disk read/write. It allocates a large block of memory (typically 85% of the total memory on the machine), and each thread will choose randomized blocks of memory to copy, or to write to disk. Typically there are two threads per processor, and two threads for each disk. Result checking is done as the test proceeds by CRCing the data as it is copied.
 
+==Downloading it== 
+
+stressapptest can be download at http://code.google.com/p/stressapptest/downloads
 
 ==How to Install==
 
