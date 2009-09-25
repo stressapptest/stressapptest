@@ -4,7 +4,9 @@
 
 To execute, just type
 
-{{{stressapptest}}}
+{{{
+stressapptest
+}}}
 
 on a shell and it will start executing with the default parameters. This usually is not enough for a regular test, so you may want to pass some command line arguments in order to get a real test.
 
