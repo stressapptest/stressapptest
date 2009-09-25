@@ -1,4 +1,4 @@
-#summary An introduction to stressful application test
+#summary An introduction to Stressful Application Test
 
 ==Objective==
 
