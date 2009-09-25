@@ -1,7 +1,5 @@
 #summary Installation Guide for Stressful Application Test
 
-=Installation Guide=
-
 The installation package follows the GNU guidelines, so, after download the latest package, just type, on this order:
 
 {{{
