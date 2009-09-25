@@ -49,4 +49,4 @@ Someone running stressapptest on a live system could cause other applications to
 
 ==Logged information==
 
-stressapptest can output a logfile of miscompares detected during its execution. SAT cannot yet log reboot failures, or other failures not visible to user space.
+stressapptest can output a logfile of miscompares detected during its execution. stressapptest cannot yet log reboot failures, or other failures not visible to user space.
