@@ -14,6 +14,8 @@ on a shell and it will start executing with the default parameters. This usually
 
 You can control the behavior of stressapptest just passing command-line arguments. Here is a list of the most common arguments:
 
+=== General arguments === 
+
   * `-M mbytes` : megabytes of ram to test
   * `-s seconds` : number of seconds to run
   * `-m threads` : number of memory copy threads to run
