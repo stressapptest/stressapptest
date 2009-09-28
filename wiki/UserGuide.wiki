@@ -68,4 +68,4 @@ You can control the behavior of stressapptest just passing command-line argument
 === NUMA control===
 
   * `--local_numa` :  choose memory regions associated with each CPU to be tested by that CPU"
-  * `--remote_numa` : choose memory regions not associated with each CPU to be tested by that CPU\n"
+  * `--remote_numa` : choose memory regions not associated with each CPU to be tested by that CPU"
