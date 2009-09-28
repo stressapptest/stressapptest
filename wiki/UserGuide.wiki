@@ -35,8 +35,9 @@ You can control the behavior of stressapptest just passing command-line argument
   * `-v level` : verbosity (0-20), default is 8
   * `--no_errors` : run without checking for errors.
   * `--force_errors` : inject false errors to test error handling.
-  * `--force_errors_like_crazy` : inject a really large amount of errors.
+  * `--force_errors_like_crazy` : inject a lot of false errors to test error handling.
   * `-F` : don't result check each transaction.
+  * `--stop_on_errors` : Stop after finding the first error.
 
 === Disk testing === 
 
