@@ -16,7 +16,6 @@
 // stress the system
 
 #include <errno.h>
-#include <malloc.h>
 #include <pthread.h>
 #include <sched.h>
 #include <signal.h>
@@ -40,6 +39,7 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <linux/unistd.h>  // for gettid
+
 // For size of block device
 #include <sys/ioctl.h>
 #include <linux/fs.h>
@@ -64,7 +64,7 @@
 // Syscalls
 // Why ubuntu, do you hate gettid so bad?
 #if !defined(__NR_gettid)
-#  define __NR_gettid             224
+  #define __NR_gettid             224
 #endif
 
 #define gettid() syscall(__NR_gettid)
@@ -100,10 +100,11 @@ namespace {
   // Get HW core ID from cpuid instruction.
   inline int apicid(void) {
     int cpu;
-#ifdef STRESSAPPTEST_CPU_PPC
-    cpu = 0;
-#else
+#if defined(STRESSAPPTEST_CPU_X86_64) || defined(STRESSAPPTEST_CPU_I686)
     __asm __volatile("cpuid" : "=b" (cpu) : "a" (1) : "cx", "dx");
+#else
+  #warning "Unsupported CPU type: unable to determine core ID."
+    cpu = 0;
 #endif
     return (cpu >> 24);
   }
@@ -268,6 +269,7 @@ FileThread::FileThread() {
   pass_ = 0;
   page_io_ = true;
   crc_page_ = -1;
+  local_page_ = NULL;
 }
 
 // If file thread used bounce buffer in memory, account for the extra
@@ -611,7 +613,7 @@ void WorkerThread::ProcessError(struct ErrorRecord *error,
                                               (error->vaddr), 1);
 
     logprintf(priority,
-              "%s: miscompare on CPU %d(%x) at %p(0x%llx:%s): "
+              "%s: miscompare on CPU %d(0x%x) at %p(0x%llx:%s): "
               "read:0x%016llx, reread:0x%016llx expected:0x%016llx\n",
               message,
               apic_id,
@@ -975,13 +977,13 @@ void WorkerThread::ProcessTagError(struct ErrorRecord *error,
   // Report parseable error.
   if (priority < 5) {
     logprintf(priority,
-              "%s: Tag from %p(0x%llx:%s) (%s) miscompare on CPU %d(%x) at "
-              "%p(0x%llx:%s): "
+              "%s: Tag from %p(0x%llx:%s) (%s) "
+              "miscompare on CPU %d(0x%x) at %p(0x%llx:%s): "
               "read:0x%016llx, reread:0x%016llx expected:0x%016llx\n",
               message,
               error->tagvaddr, error->tagpaddr,
               tag_dimm_string,
-              read_error?"read error":"write error",
+              read_error ? "read error" : "write error",
               apic_id,
               cpumask,
               error->vaddr,
@@ -1199,10 +1201,19 @@ int WorkerThread::CrcCopyPage(struct page_entry *dstpe,
                                    blocksize,
                                    currentblock * blocksize, 0);
           if (errorcount == 0) {
-            logprintf(0, "Process Error: CrcCopyPage CRC mismatch %s != %s, "
+            int apic_id = apicid();
+            uint32 cpumask = CurrentCpus();
+            logprintf(0, "Process Error: CPU %d(0x%x) CrcCopyPage "
+                         "CRC mismatch %s != %s, "
                          "but no miscompares found on second pass.\n",
+                      apic_id, cpumask,
                       crc.ToHexString().c_str(),
                       expectedcrc->ToHexString().c_str());
+            struct ErrorRecord er;
+            er.actual = sourcemem[0];
+            er.expected = 0x0;
+            er.vaddr = sourcemem;
+            ProcessError(&er, 0, "Hardware Error");
           }
         }
       }
@@ -1486,8 +1497,6 @@ int CopyThread::Work() {
   return 1;
 }
 
-
-
 // Memory invert work loop. Execute until marked done.
 int InvertThread::Work() {
   struct page_entry src;
@@ -1749,8 +1758,6 @@ bool FileThread::SectorValidatePage(const struct PageRec &page,
   return true;
 }
 
-
-
 // Get memory for an incoming data transfer..
 bool FileThread::PagePrepare() {
   // We can only do direct IO to SAT pages if it is normal mem.
@@ -1758,9 +1765,11 @@ bool FileThread::PagePrepare() {
 
   // Init a local buffer if we need it.
   if (!page_io_) {
-    local_page_ = static_cast<void*>(memalign(512, sat_->page_length()));
-    if (!local_page_) {
-      logprintf(0, "Process Error: disk thread memalign returned 0\n");
+    int result = posix_memalign(&local_page_, 512, sat_->page_length());
+    if (result) {
+      logprintf(0, "Process Error: disk thread posix_memalign "
+                   "returned %d (fail)\n",
+                result);
       status_ += 1;
       return false;
     }
@@ -2311,14 +2320,16 @@ int NetworkSlaveThread::Work() {
     return 0;
 
   // Loop until done.
-  int result = 1;
   int64 loops = 0;
   // Init a local buffer for storing data.
-  void *local_page = static_cast<void*>(memalign(512, sat_->page_length()));
-  if (!local_page) {
-    logprintf(0, "Process Error: Net Slave thread memalign returned 0\n");
+  void *local_page = NULL;
+  int result = posix_memalign(&local_page, 512, sat_->page_length());
+  if (result) {
+    logprintf(0, "Process Error: net slave posix_memalign "
+                 "returned %d (fail)\n",
+              result);
     status_ += 1;
-    return 0;
+    return false;
   }
 
   struct page_entry page;
@@ -2339,7 +2350,8 @@ int NetworkSlaveThread::Work() {
   }
 
   pages_copied_ = loops;
-  status_ = result;
+  // No results provided from this type of thread.
+  status_ = 1;
 
   // Clean up.
   CloseSocket(sock);
@@ -2348,7 +2360,7 @@ int NetworkSlaveThread::Work() {
             "Log: Completed %d: network slave thread status %d, "
             "%d pages copied\n",
             thread_num_, status_, pages_copied_);
-  return result;
+  return status_;
 }
 
 // Thread work loop. Execute until marked finished.
@@ -2475,6 +2487,8 @@ DiskThread::DiskThread(DiskBlockTable *block_table) {
   aio_ctx_ = 0;
   block_table_ = block_table;
   update_block_table_ = 1;
+
+  block_buffer_ = NULL;
 }
 
 DiskThread::~DiskThread() {
@@ -3027,13 +3041,16 @@ int DiskThread::Work() {
 
   // Allocate a block buffer aligned to 512 bytes since the kernel requires it
   // when using direst IO.
-  block_buffer_ = memalign(kBufferAlignment, write_block_size_);
-  if (block_buffer_ == NULL) {
+
+  int result = posix_memalign(&block_buffer_, kBufferAlignment,
+                              sat_->page_length());
+  if (result) {
     CloseDevice(fd);
     logprintf(0, "Process Error: Unable to allocate memory for buffers "
-                 "for disk %s (thread %d).\n",
-              device_name_.c_str(), thread_num_);
-    return 0;
+                 "for disk %s (thread %d) posix memalign returned %d.\n",
+              device_name_.c_str(), thread_num_, result);
+    status_ += 1;
+    return false;
   }
 
   if (io_setup(5, &aio_ctx_)) {

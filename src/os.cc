@@ -1,10 +1,19 @@
 // Copyright 2006 Google Inc. All Rights Reserved.
-// Author: nsanders
-//
-// os.cc : os and machine specific implementation
-// Copyright 2006 Google Inc.
-// for open source release under GPL
+// Author: nsanders, menderico
 
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+
+//      http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// os.cc : os and machine specific implementation
 // This file includes an abstracted interface
 // for linux-distro specific and HW specific
 // interfaces.
@@ -85,8 +94,13 @@ bool OsLayer::Initialize() {
 
 // Machine type detected. Can we implement all these functions correctly?
 bool OsLayer::IsSupported() {
+  if (kOpenSource) {
+    // There are no explicitly supported systems in open source version.
+    return true;
+  }
+
   // This is the default empty implementation.
-  // SAT won't really run correctly.
+  // SAT won't report full error information.
   return false;
 }
 

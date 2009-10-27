@@ -151,6 +151,15 @@
 /* Defined if the target CPU is x86_64 */
 #undef STRESSAPPTEST_CPU_X86_64
 
+/* Defined if the target OS is BSD based */
+#undef STRESSAPPTEST_OS_BSD
+
+/* Defined if the target OS is OSX */
+#undef STRESSAPPTEST_OS_DARWIN
+
+/* Defined if the target OS is Linux */
+#undef STRESSAPPTEST_OS_LINUX
+
 /* Timestamp when ./configure was executed */
 #undef STRESSAPPTEST_TIMESTAMP
 

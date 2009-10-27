@@ -45,8 +45,15 @@ FineLockPEQueue::FineLockPEQueue(
   queue_metric_ = kTouch;
 
   {  // Init all the page locks.
-    for (int64 i = 0; i < q_size_; i++)
-      pthread_mutex_init(&(pagelocks_[i]), NULL);
+    for (int64 i = 0; i < q_size_; i++) {
+        pthread_mutex_init(&(pagelocks_[i]), NULL);
+        // Pages start out owned (locked) by Sat::InitializePages.
+        // A locked state indicates that the page state is unknown,
+        // and the lock should not be aquired. As InitializePages creates
+        // the page records, they will be inserted and unlocked, at which point
+        // they are ready to be aquired and filled by worker threads.
+        sat_assert(pthread_mutex_lock(&(pagelocks_[i])) == 0);
+    }
   }
 
   {  // Init the random number generator.
