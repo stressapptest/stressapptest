@@ -1,0 +1,187 @@
+.TH STRESSAPPTEST 1 2009-10-20
+.SH NAME
+stressapptest \- stress test application for simulating high load situations
+.SH SYNOPSIS
+.B stressapptest
+.RI [ options ]
+.SH DESCRIPTION
+This manual page documents briefly the
+.B stressapptest
+command.
+.PP
+\fBstressapptest\fP (unix name for Stressful Application Test) is a program that
+tries to maximize randomized traffic to memory from processor and I/O, with the
+intent of creating a realistic high load situation in order to test the existing
+hardware devices in a computer.
+.SH OPTIONS
+This program supports the following options:
+
+.TP
+.B \-A
+Run in degraded mode on incompatible systems.
+
+.TP
+.B \-C <threads>
+Number of memory CPU stress threads to run.
+
+.TP
+.B \-d <device>
+Add a direct write disk thread with block device (or file) 'device'.
+
+.TP
+.B \-f <filename>
+Add a disk thread with tempfile 'filename'.
+
+.TP
+.B \-F
+Don't result check each transaction.
+
+.TP
+.B \-i <threads>
+Number of memory invert threads to run.
+
+.TP
+.B \-l <logfile>
+Log output to file 'logfile'.
+
+.TP
+.B \-m <threads>
+Number of memory copy threads to run.
+
+.TP
+.B \-M <mbytes>
+Megabytes of RAM to test.
+
+.TP
+.B \-n <ipaddr>
+Add a network thread connecting to system at 'ipaddr'.
+
+.TP
+.B \-p <pagesize>
+Size in bytes of memory chunks.
+
+.TP
+.B \-s <seconds>
+Number of seconds to run.
+
+.TP
+.B \-v <level>
+Verbosity (0-20), default is 8.
+
+.TP
+.B \-W
+Use more CPU-stressful memory copy.
+
+.TP
+.B \-\-blocks\-per\-segment <number>
+Number of blocks to read/write per segment per iteration (\-d).
+
+.TP
+.B \-\-cache\-size <size>
+Size of disk cache (\-d).
+
+.TP
+.B \-\-cc_inc_count <number>
+Number of times to increment the cacheline's member.
+
+.TP
+.B \-\-cc_line_count <number>
+Mumber of cache line sized datastructures to allocate for the cache coherency
+threads to operate.
+
+.TP
+.B \-\-cc_test
+Do the cache coherency testing.
+
+.TP
+.B \-\-destructive
+Write/wipe disk partition (\-d).
+
+.TP
+.B \-\-filesize <size>
+Size of disk IO tempfiles.
+
+.TP
+.B \-\-findfiles
+Find locations to do disk IO automatically.
+
+.TP
+.B \-\-force_errors
+Inject false errors to test error handling.
+
+.TP
+.B \-\-force_errors_like_crazy
+Inject a lot of false errors to test error handling.
+
+.TP
+.B \-\-listen
+Run threads that listen for incoming net connections.
+
+.TP
+.B \-\-local_numa
+Choose memory regions associated with each CPU to be tested by that CPU.
+
+.TP
+.B \-\-max_errors <number>
+Exit early after finding specified number of errors.
+
+.TP
+.B \-\-monitor_mode
+Only do ECC error polling, no stress load.
+
+.TP
+.B \-\-no_errors
+Run without checking for ECC or other errors.
+
+.TP
+.B \-\-paddr_base <address>
+Allocate memory starting from this address.
+
+.TP
+.B \-\-pause_delay <seconds>
+Delay (in seconds) between power spikes.
+
+.TP
+.B \-\-pause_duration <seconds>
+Duration (in seconds) of each pause.
+
+.TP
+.B \-\-random-threads <number>
+Number of random threads for each disk write thread (\-d).
+
+.TP
+.B \-\-read-block-size <size>
+Size of block for reading (\-d).
+
+.TP
+.B \-\-read-threshold <time>
+Maximum time (in us) a block read should take (\-d).
+
+.TP
+.B \-\-remote_numa <time>
+Choose memory regions not associated with each CPU to be tested by that CPU.
+
+.TP
+.B \-\-segment-size <size>
+Size of segments to split disk into (\-d).
+
+.TP
+.B \-\-stop_on_errors
+Stop after finding the first error.
+
+.TP
+.B \-\-write-block-size <size>
+Size of block for writing (\-d). If not defined, the size of block for writing
+will be defined as the size of block for reading.
+
+.TP
+.B \-\-write-threshold <time>
+Maximum time (in us) a block write should take (\-d).
+
+.SH SEE ALSO
+.BR http://code.google.com/p/stressapptest/
+.SH AUTHOR
+stressapptest was written by Nick Sanders and Rapahel Menderico (Google Inc).
+.PP
+This manual page was written by Michael Prokop <mika@debian.org>
+for the Debian project (and may be used by others).
