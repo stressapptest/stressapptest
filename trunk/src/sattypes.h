@@ -51,7 +51,9 @@ inline const char* BuildChangelist() {
   return "open source release";
 }
 
+static const bool kOpenSource = true;
 #else
+static const bool kOpenSource = false;
   #include "googlesattypes.h"
 #endif
 // Workaround to allow 32/64 bit conversion

@@ -1,6 +1,8 @@
 AC_PREREQ(2.61)
-AC_INIT(stressapptest, 1.0.0_autoconf, opensource@gmail.com)
+AC_INIT(stressapptest, 1.0.1_autoconf, opensource@google.com)
 
+AC_CANONICAL_HOST
+AC_CANONICAL_BUILD
 # Checking for target cpu and setting custom configuration
 # for the different platforms
 AC_CANONICAL_TARGET
@@ -19,11 +21,43 @@ case x"$target_cpu" in
 ;;
 esac
 
+_os=`uname`
+## The following allows like systems to share settings. This is not meant to
+## imply that these OS are the same thing. From OpenOffice dmake configure.in
+case "$_os" in
+        "Linux")
+          OS_VERSION=linux
+          AC_DEFINE([STRESSAPPTEST_OS_LINUX],[],
+        	    [Defined if the target OS is Linux])
+          ;;
+        "Darwin")
+          OS_VERSION=macosx
+          AC_DEFINE([STRESSAPPTEST_OS_DARWIN],[],
+        	    [Defined if the target OS is OSX])
+          ;;
+        "FreeBSD")
+          OS_VERSION=bsd
+          AC_DEFINE([STRESSAPPTEST_OS_BSD],[],
+        	    [Defined if the target OS is BSD based])
+          ;;
+        "NetBSD")
+          OS_VERSION=bsd
+          AC_DEFINE([STRESSAPPTEST_OS_BSD],[],
+        	    [Defined if the target OS is BSD based])
+          ;;
+   *)
+      AC_MSG_ERROR([$_os operating system is not suitable to build dmake!])
+      ;;
+esac
+
 AM_INIT_AUTOMAKE([-Wall -Werror foreign])
 AC_CONFIG_SRCDIR([src/])
 AC_CONFIG_HEADER([src/stressapptest_config.h])
 
 # Checks for programs.
+#  Don't generate CXXFLAGS defaults: if CXXFLAGS are unset
+#  AC_PROG_CXX will override them with unwanted defaults.
+CXXFLAGS="$CXXFLAGS"
 AC_PROG_CXX
 AC_PROG_CC
 
@@ -41,7 +75,7 @@ AC_MSG_CHECKING([current timestamp])
 AC_MSG_RESULT([$timestamp])
 
 AC_DEFINE_UNQUOTED([STRESSAPPTEST_TIMESTAMP],
-		   "$username @ $hostname on $timestamp", 
+		   "$username @ $hostname on $timestamp",
 	  	   [Timestamp when ./configure was executed])
 
 #Default cxxflags
@@ -72,7 +106,7 @@ AC_MSG_CHECKING([which argument is required to compile pthreads])
 pthread_header="#include<pthread.h>"
 pthread_body="pthread_create(0,0,0,0)"
 # Check if compile with no extra argument
-AC_LINK_IFELSE([AC_LANG_PROGRAM($pthread_header, $pthread_body)], 
+AC_LINK_IFELSE([AC_LANG_PROGRAM($pthread_header, $pthread_body)],
 pthread_arg="")
 
 if test x"$pthread_arg" = x"not_available"; then
@@ -81,7 +115,7 @@ if test x"$pthread_arg" = x"not_available"; then
   bkp_LDFLAGS="$LDFLAGS"
   for altheader in -pthread; do
     LDFLAGS="$bkp_LDFLAGS $altheader"
-    AC_LINK_IFELSE([AC_LANG_PROGRAM($pthread_header, $pthread_body)], 
+    AC_LINK_IFELSE([AC_LANG_PROGRAM($pthread_header, $pthread_body)],
     pthread_arg="$altheader")
     LDFLAGS="$bkp_LDFLAGS"
   done

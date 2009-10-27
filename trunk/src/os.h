@@ -104,7 +104,7 @@ class OsLayer {
   inline static void FastFlush(void *vaddr) {
 #ifdef STRESSAPPTEST_CPU_PPC
     asm volatile("dcbf 0,%0; sync" : : "r" (vaddr));
-#else
+#elif defined(STRESSAPPTEST_CPU_X86_64) || defined(STRESSAPPTEST_CPU_I686)
     // Put mfence before and after clflush to make sure:
     // 1. The write before the clflush is committed to memory bus;
     // 2. The read after the clflush is hitting the memory bus.
@@ -117,6 +117,8 @@ class OsLayer {
     asm volatile("mfence");
     asm volatile("clflush (%0)" :: "r" (vaddr));
     asm volatile("mfence");
+#else
+  #warning "Unsupported CPU type: Unable to force cache flushes."
 #endif
   }
 
@@ -125,24 +127,26 @@ class OsLayer {
   inline static uint64 GetTimestamp(void) {
     uint64 tsc;
 #ifdef STRESSAPPTEST_CPU_PPC
-  uint32 tbl, tbu, temp;
-  __asm __volatile(
-     "1:\n"
-     "mftbu  %2\n"
-     "mftb   %0\n"
-     "mftbu  %1\n"
-     "cmpw   %2,%1\n"
-     "bne    1b\n"
-     : "=r"(tbl), "=r"(tbu), "=r"(temp)
-     :
-     : "cc");
+    uint32 tbl, tbu, temp;
+    __asm __volatile(
+      "1:\n"
+      "mftbu  %2\n"
+      "mftb   %0\n"
+      "mftbu  %1\n"
+      "cmpw   %2,%1\n"
+      "bne    1b\n"
+      : "=r"(tbl), "=r"(tbu), "=r"(temp)
+      :
+      : "cc");
 
-  tsc = (static_cast<uint64>(tbu) << 32) | static_cast<uint64>(tbl);
-#else
+    tsc = (static_cast<uint64>(tbu) << 32) | static_cast<uint64>(tbl);
+#elif defined(STRESSAPPTEST_CPU_X86_64) || defined(STRESSAPPTEST_CPU_I686)
     datacast_t data;
     __asm __volatile("rdtsc" : "=a" (data.l32.l), "=d"(data.l32.h));
     tsc = data.l64;
-
+#else
+  #warning "Unsupported CPU type: your build may not function correctly"
+    tsc = 0;
 #endif
     return (tsc);
   }
