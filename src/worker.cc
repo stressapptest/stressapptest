@@ -2099,7 +2099,7 @@ bool NetworkThread::ReceivePage(int sock, struct page_entry *dst) {
         if (transferred == 0 && err == 0) {
           // Two system setups will not sync exactly,
           // allow early exit, but log it.
-          logprintf(0, "Log: Net thread did not recieve any data, exitting.\n");
+          logprintf(0, "Log: Net thread did not receive any data, exiting.\n");
         } else {
           char buf[256] = "";
           sat_strerror(err, buf, sizeof(buf));
