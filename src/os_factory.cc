@@ -36,6 +36,5 @@ OsLayer *OsLayerFactory(const std::map<std::string, std::string> &options) {
     logprintf(0, "Process Error: Can't allocate memory\n");
     return 0;
   }
-  os->Initialize();
   return os;
 }

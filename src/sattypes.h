@@ -22,6 +22,7 @@
 #include <sys/types.h>
 #include <time.h>
 #include <string.h>
+#include <algorithm>
 #include <string>
 
 #ifdef HAVE_CONFIG_H  // Built using autoconf
@@ -86,36 +87,64 @@ void logprintf(int priority, const char *format, ...);
   // Note: this code is hacked together to deal with difference
   // function signatures across versions of glibc, ie those that take
   // cpu_set_t versus those that take unsigned long.  -johnhuang
-  typedef unsigned long cpu_set_t;
-  #define CPU_SETSIZE                   32
-  #define CPU_ISSET(index, cpu_set_ptr) (*(cpu_set_ptr) & 1 << (index))
-  #define CPU_SET(index, cpu_set_ptr)   (*(cpu_set_ptr) |= 1 << (index))
+  typedef uint64 cpu_set_t;
+  #define CPU_SETSIZE                   (sizeof(cpu_set_t) * 8)
+  #define CPU_ISSET(index, cpu_set_ptr) (*(cpu_set_ptr) & 1ull << (index))
+  #define CPU_SET(index, cpu_set_ptr)   (*(cpu_set_ptr) |= 1ull << (index))
   #define CPU_ZERO(cpu_set_ptr)         (*(cpu_set_ptr) = 0)
-  #define CPU_CLR(index, cpu_set_ptr)   (*(cpu_set_ptr) &= ~(1 << (index)))
+  #define CPU_CLR(index, cpu_set_ptr)   (*(cpu_set_ptr) &= ~(1ull << (index)))
 #endif
 
-// Make using CPUSET non-super-painful.
-static inline uint32 cpuset_to_uint32(cpu_set_t *cpuset) {
-  uint32 value = 0;
-  for (int index = 0; index < CPU_SETSIZE; index++) {
-    if (CPU_ISSET(index, cpuset)) {
-      if (index < 32) {
-          value |= 1 << index;
-      } else {
-        logprintf(0, "Process Error: Cpu index (%d) higher than 32\n", index);
-        sat_assert(0);
+static inline bool cpuset_isequal(const cpu_set_t *c1, const cpu_set_t *c2) {
+  for (int i = 0; i < CPU_SETSIZE; ++i)
+    if ((CPU_ISSET(i, c1) != 0) != (CPU_ISSET(i, c2) != 0))
+      return false;
+  return true;
+}
+
+static inline bool cpuset_issubset(const cpu_set_t *c1, const cpu_set_t *c2) {
+  for (int i = 0; i < CPU_SETSIZE; ++i)
+    if (CPU_ISSET(i, c1) && !CPU_ISSET(i, c2))
+      return false;
+  return true;
+}
+
+static inline int cpuset_count(const cpu_set_t *cpuset) {
+  int count = 0;
+  for (int i = 0; i < CPU_SETSIZE; ++i)
+    if (CPU_ISSET(i, cpuset))
+      ++count;
+  return count;
+}
+
+static inline void cpuset_set_ab(cpu_set_t *cpuset, int a, int b) {
+  CPU_ZERO(cpuset);
+  for (int i = a; i < b; ++i)
+    CPU_SET(i, cpuset);
+}
+
+static inline string cpuset_format(const cpu_set_t *cpuset) {
+  string format;
+  int digit = 0, last_non_zero_size = 1;
+  for (int i = 0; i < CPU_SETSIZE; ++i) {
+    if (CPU_ISSET(i, cpuset)) {
+      digit |= 1 << (i & 3);
+    }
+    if ((i & 3) == 3) {
+      format += char(digit <= 9 ? '0' + digit: 'A' + digit - 10);
+      if (digit) {
+        last_non_zero_size = format.size();
+        digit = 0;
       }
     }
   }
-  return value;
-}
-
-static inline void cpuset_from_uint32(uint32 mask, cpu_set_t *cpuset) {
-  CPU_ZERO(cpuset);
-  for (int index = 0; index < 32; index++) {
-    if (mask & (1 << index))
-      CPU_SET(index, cpuset);
+  if (digit) {
+    format += char(digit <= 9 ? '0' + digit: 'A' + digit - 10);
+    last_non_zero_size = format.size();
   }
+  format.erase(last_non_zero_size);
+  reverse(format.begin(), format.end());
+  return format;
 }
 
 static const int32 kUSleepOneSecond = 1000000;

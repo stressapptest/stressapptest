@@ -147,6 +147,7 @@ class Sat {
   int64 pages_;                       // Number of memory blocks.
   int64 size_;                        // Size of memory tested, in bytes.
   int64 size_mb_;                     // Size of memory tested, in MB.
+  int64 min_hugepages_mbytes_;        // Minimum hugepages size.
   int64 freepages_;                   // How many invalid pages we need.
   int disk_pages_;                    // Number of pages per temp file.
   uint64 paddr_base_;                 // Physical address base.

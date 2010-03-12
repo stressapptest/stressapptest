@@ -50,6 +50,12 @@ class OsLayer {
   OsLayer();
   virtual ~OsLayer();
 
+  // Set the minimum amount of hugepages that should be available for testing.
+  // Must be set before Initialize().
+  void SetMinimumHugepagesSize(int64 min_bytes) {
+    min_hugepages_bytes_ = min_bytes;
+  }
+
   // Initializes data strctures and open files.
   // Returns false on error.
   virtual bool Initialize();
@@ -75,6 +81,8 @@ class OsLayer {
   virtual int32 FindRegion(uint64 paddr);
   // Find cpu cores associated with a region. Either NUMA or arbitrary.
   virtual cpu_set_t *FindCoreMask(int32 region);
+  // Return cpu cores associated with a region in a hex string.
+  virtual string FindCoreMaskFormat(int32 region);
 
   // Returns the HD device that contains this file.
   virtual string FindFileDevice(string filename);
@@ -228,21 +236,22 @@ class OsLayer {
   ErrCallback get_err_log_callback() { return err_log_callback_; }
 
  protected:
-  void *testmem_;            // Location of test memory.
-  int64 testmemsize_;        // Size of test memory.
-  int64 totalmemsize_;       // Size of available memory.
-  bool  error_injection_;    // Do error injection?
-  bool  normal_mem_;         // Memory DMA capable?
-  bool  use_hugepages_;      // Use hugepage shmem?
-  int   shmid_;              // Handle to shmem
+  void *testmem_;                // Location of test memory.
+  int64 testmemsize_;            // Size of test memory.
+  int64 totalmemsize_;           // Size of available memory.
+  int64 min_hugepages_bytes_;    // Minimum hugepages size.
+  bool  error_injection_;        // Do error injection?
+  bool  normal_mem_;             // Memory DMA capable?
+  bool  use_hugepages_;          // Use hugepage shmem?
+  int   shmid_;                  // Handle to shmem
 
-  int64 regionsize_;         // Size of memory "regions"
-  int   regioncount_;        // Number of memory "regions"
-  int   num_cpus_;           // Number of cpus in the system.
-  int   num_nodes_;          // Number of nodes in the system.
-  int   num_cpus_per_node_;  // Number of cpus per node in the system.
+  int64 regionsize_;             // Size of memory "regions"
+  int   regioncount_;            // Number of memory "regions"
+  int   num_cpus_;               // Number of cpus in the system.
+  int   num_nodes_;              // Number of nodes in the system.
+  int   num_cpus_per_node_;      // Number of cpus per node in the system.
 
-  time_t time_initialized_;  // Start time of test.
+  time_t time_initialized_;      // Start time of test.
 
   vector<cpu_set_t> cpu_sets_;   // Cache for cpu masks.
   vector<bool> cpu_sets_valid_;  // If the cpu mask cache is valid.
@@ -263,7 +272,8 @@ class OsLayer {
   DISALLOW_COPY_AND_ASSIGN(OsLayer);
 };
 
-// Selects and returns the proper OS and hardware interface.
+// Selects and returns the proper OS and hardware interface.  Does not call
+// OsLayer::Initialize() on the new object.
 OsLayer *OsLayerFactory(const std::map<std::string, std::string> &options);
 
 #endif  // STRESSAPPTEST_OS_H_ NOLINT
