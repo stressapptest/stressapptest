@@ -26,7 +26,7 @@
 #include <sys/time.h>
 #include <sys/types.h>
 
-#include <linux/aio_abi.h>
+#include <libaio.h>
 
 #include <queue>
 #include <set>
@@ -207,11 +207,11 @@ class WorkerThread {
   virtual ~WorkerThread();
 
   // Initialize values and thread ID number.
-  void InitThread(int thread_num_init,
-                  class Sat *sat_init,
-                  class OsLayer *os_init,
-                  class PatternList *patternlist_init,
-                  WorkerStatus *worker_status);
+  virtual void InitThread(int thread_num_init,
+                          class Sat *sat_init,
+                          class OsLayer *os_init,
+                          class PatternList *patternlist_init,
+                          WorkerStatus *worker_status);
 
   // This function is DEPRECATED, it does nothing.
   void SetPriority(Priority priority) { priority_ = priority; }
@@ -222,13 +222,13 @@ class WorkerThread {
   bool InitPriority();
 
   // Wait for the thread to complete its cleanup.
-  virtual int JoinThread();
+  virtual bool JoinThread();
   // Kill worker thread with SIGINT.
-  virtual int KillThread();
+  virtual bool KillThread();
 
   // This is the task function that the thread executes.
   // This is implemented per subclass.
-  virtual int Work();
+  virtual bool Work();
 
   // Starts per-WorkerThread timer.
   void StartThreadTimer() {gettimeofday(&start_time_, NULL);}
@@ -247,13 +247,13 @@ class WorkerThread {
   }
 
   // Acccess member variables.
-  int GetStatus() {return status_;}
+  bool GetStatus() {return status_;}
   int64 GetErrorCount() {return errorcount_;}
   int64 GetPageCount() {return pages_copied_;}
   int64 GetRunDurationUSec() {return runduration_usec_;}
 
   // Returns bandwidth defined as pages_copied / thread_run_durations.
-  float GetCopiedData();
+  virtual float GetCopiedData();
   // Calculate worker thread specific copied data.
   virtual float GetMemoryCopiedData() {return 0;}
   virtual float GetDeviceCopiedData() {return 0;}
@@ -265,18 +265,31 @@ class WorkerThread {
     {return GetDeviceCopiedData() / (
         runduration_usec_ * 1.0 / 1000000);}
 
-  void set_cpu_mask(int32 mask) {cpu_mask_ = mask;}
+  void set_cpu_mask(cpu_set_t *mask) {
+    memcpy(&cpu_mask_, mask, sizeof(*mask));
+  }
+
+  void set_cpu_mask_to_cpu(int cpu_num) {
+    cpuset_set_ab(&cpu_mask_, cpu_num, cpu_num + 1);
+  }
+
   void set_tag(int32 tag) {tag_ = tag;}
 
   // Returns CPU mask, where each bit represents a logical cpu.
-  uint32 AvailableCpus();
+  bool AvailableCpus(cpu_set_t *cpuset);
   // Returns CPU mask of CPUs this thread is bound to,
-  uint32 CurrentCpus();
+  bool CurrentCpus(cpu_set_t *cpuset);
+  // Returns Current Cpus mask as string.
+  string CurrentCpusFormat() {
+    cpu_set_t current_cpus;
+    CurrentCpus(&current_cpus);
+    return cpuset_format(&current_cpus);
+  }
 
   int ThreadID() {return thread_num_;}
 
   // Bind worker thread to specified CPU(s)
-  bool BindToCpus(uint32 thread_mask);
+  bool BindToCpus(const cpu_set_t *cpuset);
 
  protected:
   // This function dictates whether the main work loop
@@ -326,17 +339,26 @@ class WorkerThread {
                                 unsigned int size_in_bytes,
                                 AdlerChecksum *checksum,
                                 struct page_entry *pe);
+  // SSE copy with address tagging.
+  virtual bool AdlerAddrMemcpyWarm(uint64 *dstmem64,
+                                   uint64 *srcmem64,
+                                   unsigned int size_in_bytes,
+                                   AdlerChecksum *checksum,
+                                   struct page_entry *pe);
   // Crc data with address tagging.
   virtual bool AdlerAddrCrcC(uint64 *srcmem64,
                              unsigned int size_in_bytes,
                              AdlerChecksum *checksum,
                              struct page_entry *pe);
+  // Setup tagging on an existing page.
+  virtual bool TagAddrC(uint64 *memwords,
+                        unsigned int size_in_bytes);
   // Report a mistagged cacheline.
-  bool ReportTagError(uint64 *mem64,
+  virtual bool ReportTagError(uint64 *mem64,
                       uint64 actual,
                       uint64 tag);
   // Print out the error record of the tag mismatch.
-  void ProcessTagError(struct ErrorRecord *error,
+  virtual void ProcessTagError(struct ErrorRecord *error,
                        int priority,
                        const char *message);
 
@@ -346,11 +368,11 @@ class WorkerThread {
  protected:
   // General state variables that all subclasses need.
   int thread_num_;                  // Thread ID.
-  volatile int status_;             // Error status.
+  volatile bool status_;            // Error status.
   volatile int64 pages_copied_;     // Recorded for memory bandwidth calc.
   volatile int64 errorcount_;       // Miscompares seen by this thread.
 
-  volatile uint32 cpu_mask_;        // Cores this thread is allowed to run on.
+  cpu_set_t cpu_mask_;              // Cores this thread is allowed to run on.
   volatile uint32 tag_;             // Tag hint for memory this thread can use.
 
   bool tag_mode_;                   // Tag cachelines with vaddr.
@@ -383,7 +405,7 @@ class FileThread : public WorkerThread {
   FileThread();
   // Set filename to use for file IO.
   virtual void SetFile(const char *filename_init);
-  virtual int Work();
+  virtual bool Work();
 
   // Calculate worker thread specific bandwidth.
   virtual float GetDeviceCopiedData()
@@ -466,7 +488,7 @@ class NetworkThread : public WorkerThread {
   NetworkThread();
   // Set hostname to use for net IO.
   virtual void SetIP(const char *ipaddr_init);
-  virtual int Work();
+  virtual bool Work();
 
   // Calculate worker thread specific bandwidth.
   virtual float GetDeviceCopiedData()
@@ -493,7 +515,7 @@ class NetworkSlaveThread : public NetworkThread {
   NetworkSlaveThread();
   // Set socket for IO.
   virtual void SetSock(int sock);
-  virtual int Work();
+  virtual bool Work();
 
  protected:
   virtual bool IsNetworkStopSet();
@@ -506,7 +528,7 @@ class NetworkSlaveThread : public NetworkThread {
 class NetworkListenThread : public NetworkThread {
  public:
   NetworkListenThread();
-  virtual int Work();
+  virtual bool Work();
 
  private:
   virtual bool Listen();
@@ -530,7 +552,7 @@ class NetworkListenThread : public NetworkThread {
 class CopyThread : public WorkerThread {
  public:
   CopyThread() {}
-  virtual int Work();
+  virtual bool Work();
   // Calculate worker thread specific bandwidth.
   virtual float GetMemoryCopiedData()
     {return GetCopiedData()*2;}
@@ -543,7 +565,7 @@ class CopyThread : public WorkerThread {
 class InvertThread : public WorkerThread {
  public:
   InvertThread() {}
-  virtual int Work();
+  virtual bool Work();
   // Calculate worker thread specific bandwidth.
   virtual float GetMemoryCopiedData()
     {return GetCopiedData()*4;}
@@ -560,7 +582,7 @@ class FillThread : public WorkerThread {
   FillThread();
   // Set how many pages this thread should fill before exiting.
   virtual void SetFillPages(int64 num_pages_to_fill_init);
-  virtual int Work();
+  virtual bool Work();
 
  private:
   // Fill a page with the data pattern in pe->pattern.
@@ -575,7 +597,7 @@ class FillThread : public WorkerThread {
 class CheckThread : public WorkerThread {
  public:
   CheckThread() {}
-  virtual int Work();
+  virtual bool Work();
   // Calculate worker thread specific bandwidth.
   virtual float GetMemoryCopiedData()
     {return GetCopiedData();}
@@ -590,7 +612,7 @@ class CheckThread : public WorkerThread {
 class ErrorPollThread : public WorkerThread {
  public:
   ErrorPollThread() {}
-  virtual int Work();
+  virtual bool Work();
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ErrorPollThread);
@@ -600,7 +622,7 @@ class ErrorPollThread : public WorkerThread {
 class CpuStressThread : public WorkerThread {
  public:
   CpuStressThread() {}
-  virtual int Work();
+  virtual bool Work();
 
  private:
   DISALLOW_COPY_AND_ASSIGN(CpuStressThread);
@@ -614,7 +636,7 @@ class CpuCacheCoherencyThread : public WorkerThread {
                           int cc_cacheline_count_,
                           int cc_thread_num_,
                           int cc_inc_count_);
-  virtual int Work();
+  virtual bool Work();
 
  protected:
   cc_cacheline_data *cc_cacheline_data_;  // Datstructure for each cacheline.
@@ -651,7 +673,7 @@ class DiskThread : public WorkerThread {
                              int64 write_threshold,
                              int non_destructive);
 
-  virtual int Work();
+  virtual bool Work();
 
   virtual float GetMemoryCopiedData() {return 0;}
 
@@ -727,7 +749,7 @@ class DiskThread : public WorkerThread {
                                                 // not verified.
   void *block_buffer_;        // Pointer to aligned block buffer.
 
-  aio_context_t aio_ctx_;     // Asynchronous I/O context for Linux native AIO.
+  io_context_t aio_ctx_;     // Asynchronous I/O context for Linux native AIO.
 
   DiskBlockTable *block_table_;  // Disk Block Table, shared by all disk
                                  // threads that read / write at the same
@@ -751,7 +773,7 @@ class MemoryRegionThread : public WorkerThread {
  public:
   MemoryRegionThread();
   ~MemoryRegionThread();
-  virtual int Work();
+  virtual bool Work();
   void ProcessError(struct ErrorRecord *error, int priority,
                     const char *message);
   bool SetRegion(void *region, int64 size);

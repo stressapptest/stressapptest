@@ -1,5 +1,5 @@
 AC_PREREQ(2.61)
-AC_INIT(stressapptest, 1.0.1_autoconf, opensource@google.com)
+AC_INIT(stressapptest, 1.0.2_autoconf, opensource@google.com)
 
 AC_CANONICAL_HOST
 AC_CANONICAL_BUILD
@@ -87,6 +87,7 @@ CXXFLAGS="$CXXFLAGS -O3 -funroll-all-loops  -funroll-loops -DNDEBUG"
 AC_HEADER_DIRENT
 AC_HEADER_STDC
 AC_CHECK_HEADERS([arpa/inet.h fcntl.h malloc.h netdb.h stdint.h stdlib.h string.h sys/ioctl.h sys/socket.h sys/time.h unistd.h])
+AC_CHECK_HEADERS([pthread.h libaio.h])
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_HEADER_STDBOOL
@@ -130,6 +131,37 @@ else
      AC_MSG_RESULT([$pthread_arg])
    fi
    LDFLAGS="$LDFLAGS $pthread_arg"
+fi
+
+# Checking for libaio
+libaio_arg="not_available"
+AC_MSG_CHECKING([which argument is required to compile libaio])
+
+libaio_header="#include<libaio.h>"
+libaio_body="io_submit(0,0,0)"
+# Check if compile with no extra argument
+AC_LINK_IFELSE([AC_LANG_PROGRAM($libaio_header, $libaio_body)],
+libaio_arg="")
+
+if test x"$libaio_arg" = x"not_available"; then
+  bkp_LDFLAGS="$LDFLAGS"
+  for altheader in -laio; do
+    LDFLAGS="$bkp_LDFLAGS $altheader"
+    AC_LINK_IFELSE([AC_LANG_PROGRAM($libaio_header, $libaio_body)],
+    libaio_arg="$altheader")
+    LDFLAGS="$bkp_LDFLAGS"
+  done
+fi
+
+if test x"$libaio_arg" = x"not_available"; then
+   AC_MSG_FAILURE([Cannot find libaio library, please install libaio-dev])
+else
+   if test x"$libaio_arg" = x; then
+     AC_MSG_RESULT([none])
+   else
+     AC_MSG_RESULT([$libaio_arg])
+   fi
+   LDFLAGS="$LDFLAGS $libaio_arg"
 fi
 
 # Checks for library functions.

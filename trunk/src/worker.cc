@@ -44,7 +44,7 @@
 #include <sys/ioctl.h>
 #include <linux/fs.h>
 // For asynchronous I/O
-#include <linux/aio_abi.h>
+#include <libaio.h>
 
 #include <sys/syscall.h>
 
@@ -77,24 +77,8 @@ _syscall3(int, sched_setaffinity, pid_t, pid,
 
 // Linux aio syscalls.
 #if !defined(__NR_io_setup)
-#define __NR_io_setup   206
-#define __NR_io_destroy 207
-#define __NR_io_getevents       208
-#define __NR_io_submit  209
-#define __NR_io_cancel  210
+#error "No aio headers inculded, please install libaio."
 #endif
-
-#define io_setup(nr_events, ctxp) \
-  syscall(__NR_io_setup, (nr_events), (ctxp))
-#define io_submit(ctx_id, nr, iocbpp) \
-  syscall(__NR_io_submit, (ctx_id), (nr), (iocbpp))
-#define io_getevents(ctx_id, io_getevents, nr, events, timeout) \
-  syscall(__NR_io_getevents, (ctx_id), (io_getevents), (nr), (events), \
-    (timeout))
-#define io_cancel(ctx_id, iocb, result) \
-  syscall(__NR_io_cancel, (ctx_id), (iocb), (result))
-#define io_destroy(ctx) \
-  syscall(__NR_io_destroy, (ctx))
 
 namespace {
   // Get HW core ID from cpuid instruction.
@@ -156,7 +140,6 @@ static void *ThreadSpawnerGeneric(void *ptr) {
   worker->StartRoutine();
   return NULL;
 }
-
 
 void WorkerStatus::Initialize() {
   sat_assert(0 == pthread_mutex_init(&num_workers_mutex_, NULL));
@@ -245,10 +228,10 @@ void WorkerStatus::RemoveSelf() {
 
 // Parent thread class.
 WorkerThread::WorkerThread() {
-  status_ = 0;
+  status_ = false;
   pages_copied_ = 0;
   errorcount_ = 0;
-  runduration_usec_ = 0;
+  runduration_usec_ = 1;
   priority_ = Normal;
   worker_status_ = NULL;
   thread_spawner_ = &ThreadSpawnerGeneric;
@@ -310,7 +293,7 @@ void WorkerThread::InitThread(int thread_num_init,
   patternlist_ = patternlist_init;
   worker_status_ = worker_status;
 
-  cpu_mask_ = AvailableCpus();
+  AvailableCpus(&cpu_mask_);
   tag_ = 0xffffffff;
 
   tag_mode_ = sat_->tag_mode();
@@ -321,12 +304,15 @@ void WorkerThread::InitThread(int thread_num_init,
 bool WorkerThread::InitPriority() {
   // This doesn't affect performance that much, and may not be too safe.
 
-  bool ret = BindToCpus(cpu_mask_);
+  bool ret = BindToCpus(&cpu_mask_);
   if (!ret)
-    logprintf(11, "Log: Bind to %x failed.\n", cpu_mask_);
+    logprintf(11, "Log: Bind to %s failed.\n",
+              cpuset_format(&cpu_mask_).c_str());
 
-  logprintf(11, "Log: Thread %d running on apic ID %d mask %x (%x).\n",
-            thread_num_, apicid(), CurrentCpus(), cpu_mask_);
+  logprintf(11, "Log: Thread %d running on apic ID %d mask %s (%s).\n",
+            thread_num_, apicid(),
+            CurrentCpusFormat().c_str(),
+            cpuset_format(&cpu_mask_).c_str());
 #if 0
   if (priority_ == High) {
     sched_param param;
@@ -356,7 +342,7 @@ int WorkerThread::SpawnThread() {
     logprintf(0, "Process Error: pthread_create "
                   "failed - error %d %s\n", result,
               buf);
-    status_ += 1;
+    status_ = false;
     return false;
   }
 
@@ -365,18 +351,17 @@ int WorkerThread::SpawnThread() {
 }
 
 // Kill the worker thread with SIGINT.
-int WorkerThread::KillThread() {
-  pthread_kill(thread_, SIGINT);
-  return 0;
+bool WorkerThread::KillThread() {
+  return (pthread_kill(thread_, SIGINT) == 0);
 }
 
 // Block until thread has exited.
-int WorkerThread::JoinThread() {
+bool WorkerThread::JoinThread() {
   int result = pthread_join(thread_, NULL);
 
   if (result) {
     logprintf(0, "Process Error: pthread_join failed - error %d\n", result);
-    status_ = 0;
+    status_ = false;
   }
 
   // 0 is pthreads success.
@@ -394,14 +379,14 @@ void WorkerThread::StartRoutine() {
 
 
 // Thread work loop. Execute until marked finished.
-int WorkerThread::Work() {
+bool WorkerThread::Work() {
   do {
     logprintf(9, "Log: ...\n");
     // Sleep for 1 second.
     sat_sleep(1);
   } while (IsReadyToRun());
 
-  return 0;
+  return false;
 }
 
 
@@ -409,11 +394,9 @@ int WorkerThread::Work() {
 // Conceptually, each bit represents a logical CPU, ie:
 //   mask = 3  (11b):   cpu0, 1
 //   mask = 13 (1101b): cpu0, 2, 3
-uint32 WorkerThread::AvailableCpus() {
-  cpu_set_t curr_cpus;
-  CPU_ZERO(&curr_cpus);
-  sched_getaffinity(getppid(), sizeof(curr_cpus), &curr_cpus);
-  return cpuset_to_uint32(&curr_cpus);
+bool WorkerThread::AvailableCpus(cpu_set_t *cpuset) {
+  CPU_ZERO(cpuset);
+  return sched_getaffinity(getppid(), sizeof(*cpuset), cpuset) == 0;
 }
 
 
@@ -421,11 +404,9 @@ uint32 WorkerThread::AvailableCpus() {
 // Conceptually, each bit represents a logical CPU, ie:
 //   mask = 3  (11b):   cpu0, 1
 //   mask = 13 (1101b): cpu0, 2, 3
-uint32 WorkerThread::CurrentCpus() {
-  cpu_set_t curr_cpus;
-  CPU_ZERO(&curr_cpus);
-  sched_getaffinity(0, sizeof(curr_cpus), &curr_cpus);
-  return cpuset_to_uint32(&curr_cpus);
+bool WorkerThread::CurrentCpus(cpu_set_t *cpuset) {
+  CPU_ZERO(cpuset);
+  return sched_getaffinity(0, sizeof(*cpuset), cpuset) == 0;
 }
 
 
@@ -437,21 +418,22 @@ uint32 WorkerThread::CurrentCpus() {
 //                  mask = 13 (1101b): cpu0, 2, 3
 //
 //   Returns true on success, false otherwise.
-bool WorkerThread::BindToCpus(uint32 thread_mask) {
-  uint32 process_mask = AvailableCpus();
-  if (thread_mask == process_mask)
+bool WorkerThread::BindToCpus(const cpu_set_t *thread_mask) {
+  cpu_set_t process_mask;
+  AvailableCpus(&process_mask);
+  if (cpuset_isequal(thread_mask, &process_mask))
     return true;
 
-  logprintf(11, "Log: available CPU mask - %x\n", process_mask);
-  if ((thread_mask | process_mask) != process_mask) {
+  logprintf(11, "Log: available CPU mask - %s\n",
+            cpuset_format(&process_mask).c_str());
+  if (!cpuset_issubset(thread_mask, &process_mask)) {
     // Invalid cpu_mask, ie cpu not allocated to this process or doesn't exist.
-    logprintf(0, "Log: requested CPUs %x not a subset of available %x\n",
-              thread_mask, process_mask);
+    logprintf(0, "Log: requested CPUs %s not a subset of available %s\n",
+              cpuset_format(thread_mask).c_str(),
+              cpuset_format(&process_mask).c_str());
     return false;
   }
-  cpu_set_t cpuset;
-  cpuset_from_uint32(thread_mask, &cpuset);
-  return (sched_setaffinity(gettid(), sizeof(cpuset), &cpuset) == 0);
+  return (sched_setaffinity(gettid(), sizeof(*thread_mask), thread_mask) == 0);
 }
 
 
@@ -533,8 +515,8 @@ bool FillThread::FillPageRandom(struct page_entry *pe) {
 
 
 // Memory fill work loop. Execute until alloted pages filled.
-int FillThread::Work() {
-  int result = 1;
+bool FillThread::Work() {
+  bool result = true;
 
   logprintf(9, "Log: Starting fill thread %d\n", thread_num_);
 
@@ -544,7 +526,7 @@ int FillThread::Work() {
   struct page_entry pe;
   int64 loops = 0;
   while (IsReadyToRun() && (loops < num_pages_to_fill_)) {
-    result &= sat_->GetEmpty(&pe);
+    result = result && sat_->GetEmpty(&pe);
     if (!result) {
       logprintf(0, "Process Error: fill_thread failed to pop pages, "
                 "bailing\n");
@@ -552,11 +534,11 @@ int FillThread::Work() {
     }
 
     // Fill the page with pattern
-    result &= FillPageRandom(&pe);
+    result = result && FillPageRandom(&pe);
     if (!result) break;
 
     // Put the page back on the queue.
-    result &= sat_->PutValid(&pe);
+    result = result && sat_->PutValid(&pe);
     if (!result) {
       logprintf(0, "Process Error: fill_thread failed to push pages, "
                 "bailing\n");
@@ -570,7 +552,7 @@ int FillThread::Work() {
   status_ = result;
   logprintf(9, "Log: Completed %d: Fill thread. Status %d, %d pages filled\n",
             thread_num_, status_, pages_copied_);
-  return 0;
+  return result;
 }
 
 
@@ -581,7 +563,6 @@ void WorkerThread::ProcessError(struct ErrorRecord *error,
   char dimm_string[256] = "";
 
   int apic_id = apicid();
-  uint32 cpumask = CurrentCpus();
 
   // Determine if this is a write or read error.
   os_->Flush(error->vaddr);
@@ -613,11 +594,11 @@ void WorkerThread::ProcessError(struct ErrorRecord *error,
                                               (error->vaddr), 1);
 
     logprintf(priority,
-              "%s: miscompare on CPU %d(0x%x) at %p(0x%llx:%s): "
+              "%s: miscompare on CPU %d(0x%s) at %p(0x%llx:%s): "
               "read:0x%016llx, reread:0x%016llx expected:0x%016llx\n",
               message,
               apic_id,
-              cpumask,
+              CurrentCpusFormat().c_str(),
               error->vaddr,
               error->paddr,
               dimm_string,
@@ -950,7 +931,6 @@ void WorkerThread::ProcessTagError(struct ErrorRecord *error,
   bool read_error = false;
 
   int apic_id = apicid();
-  uint32 cpumask = CurrentCpus();
 
   // Determine if this is a write or read error.
   os_->Flush(error->vaddr);
@@ -978,14 +958,14 @@ void WorkerThread::ProcessTagError(struct ErrorRecord *error,
   if (priority < 5) {
     logprintf(priority,
               "%s: Tag from %p(0x%llx:%s) (%s) "
-              "miscompare on CPU %d(0x%x) at %p(0x%llx:%s): "
+              "miscompare on CPU %d(0x%s) at %p(0x%llx:%s): "
               "read:0x%016llx, reread:0x%016llx expected:0x%016llx\n",
               message,
               error->tagvaddr, error->tagpaddr,
               tag_dimm_string,
               read_error ? "read error" : "write error",
               apic_id,
-              cpumask,
+              CurrentCpusFormat().c_str(),
               error->vaddr,
               error->paddr,
               dimm_string,
@@ -1090,6 +1070,46 @@ bool WorkerThread::AdlerAddrMemcpyC(uint64 *dstmem64,
   return true;
 }
 
+// x86_64 SSE2 assembly implementation of Adler memory copy, with address
+// tagging added as a second step. This is useful for debugging failures
+// that only occur when SSE / nontemporal writes are used.
+bool WorkerThread::AdlerAddrMemcpyWarm(uint64 *dstmem64,
+                                       uint64 *srcmem64,
+                                       unsigned int size_in_bytes,
+                                       AdlerChecksum *checksum,
+                                       struct page_entry *pe) {
+  // Do ASM copy, ignore checksum.
+  AdlerChecksum ignored_checksum;
+  os_->AdlerMemcpyWarm(dstmem64, srcmem64, size_in_bytes, &ignored_checksum);
+
+  // Force cache flush.
+  int length = size_in_bytes / sizeof(*dstmem64);
+  for (int i = 0; i < length; i += sizeof(*dstmem64)) {
+    os_->FastFlush(dstmem64 + i);
+    os_->FastFlush(srcmem64 + i);
+  }
+  // Check results.
+  AdlerAddrCrcC(srcmem64, size_in_bytes, checksum, pe);
+  // Patch up address tags.
+  TagAddrC(dstmem64, size_in_bytes);
+  return true;
+}
+
+// Retag pages..
+bool WorkerThread::TagAddrC(uint64 *memwords,
+                            unsigned int size_in_bytes) {
+  // Mask is the bitmask of indexes used by the pattern.
+  // It is the pattern size -1. Size is always a power of 2.
+
+  // Select tag or data as appropriate.
+  int length = size_in_bytes / wordsize_;
+  for (int i = 0; i < length; i += 8) {
+    datacast_t data;
+    data.l64 = addr_to_tag(&memwords[i]);
+    memwords[i] = data.l64;
+  }
+  return true;
+}
 
 // C implementation of Adler memory crc.
 bool WorkerThread::AdlerAddrCrcC(uint64 *srcmem64,
@@ -1122,15 +1142,12 @@ bool WorkerThread::AdlerAddrCrcC(uint64 *srcmem64,
       if (data.l64 != src_tag)
         ReportTagError(&srcmem64[i], data.l64, src_tag);
 
-
       data.l32.l = pattern->pattern(i << 1);
       data.l32.h = pattern->pattern((i << 1) + 1);
       a1 = a1 + data.l32.l;
       b1 = b1 + a1;
       a1 = a1 + data.l32.h;
       b1 = b1 + a1;
-
-
     } else {
       data.l64 = srcmem64[i];
       a1 = a1 + data.l32.l;
@@ -1202,11 +1219,10 @@ int WorkerThread::CrcCopyPage(struct page_entry *dstpe,
                                    currentblock * blocksize, 0);
           if (errorcount == 0) {
             int apic_id = apicid();
-            uint32 cpumask = CurrentCpus();
-            logprintf(0, "Process Error: CPU %d(0x%x) CrcCopyPage "
+            logprintf(0, "Process Error: CPU %d(0x%s) CrcCopyPage "
                          "CRC mismatch %s != %s, "
                          "but no miscompares found on second pass.\n",
-                      apic_id, cpumask,
+                      apic_id, CurrentCpusFormat().c_str(),
                       crc.ToHexString().c_str(),
                       expectedcrc->ToHexString().c_str());
             struct ErrorRecord er;
@@ -1317,7 +1333,7 @@ int WorkerThread::CrcWarmCopyPage(struct page_entry *dstpe,
 
     AdlerChecksum crc;
     if (tag_mode_) {
-      AdlerAddrMemcpyC(targetmem, sourcemem, blocksize, &crc, srcpe);
+      AdlerAddrMemcpyWarm(targetmem, sourcemem, blocksize, &crc, srcpe);
     } else {
       os_->AdlerMemcpyWarm(targetmem, sourcemem, blocksize, &crc);
     }
@@ -1346,10 +1362,18 @@ int WorkerThread::CrcWarmCopyPage(struct page_entry *dstpe,
                                    blocksize,
                                    currentblock * blocksize, 0);
           if (errorcount == 0) {
-            logprintf(0, "Process Error: CrcWarmCopyPage CRC mismatch %s "
-                         "!= %s, but no miscompares found on second pass.\n",
+            int apic_id = apicid();
+            logprintf(0, "Process Error: CPU %d(0x%s) CrciWarmCopyPage "
+                         "CRC mismatch %s != %s, "
+                         "but no miscompares found on second pass.\n",
+                      apic_id, CurrentCpusFormat().c_str(),
                       crc.ToHexString().c_str(),
                       expectedcrc->ToHexString().c_str());
+            struct ErrorRecord er;
+            er.actual = sourcemem[0];
+            er.expected = 0x0;
+            er.vaddr = sourcemem;
+            ProcessError(&er, 0, "Hardware Error");
           }
         }
       }
@@ -1388,23 +1412,23 @@ int WorkerThread::CrcWarmCopyPage(struct page_entry *dstpe,
 
 
 // Memory check work loop. Execute until done, then exhaust pages.
-int CheckThread::Work() {
+bool CheckThread::Work() {
   struct page_entry pe;
-  int result = 1;
+  bool result = true;
   int64 loops = 0;
 
   logprintf(9, "Log: Starting Check thread %d\n", thread_num_);
 
   // We want to check all the pages, and
   // stop when there aren't any left.
-  while (1) {
-    result &= sat_->GetValid(&pe);
+  while (true) {
+    result = result && sat_->GetValid(&pe);
     if (!result) {
       if (IsReadyToRunNoPause())
         logprintf(0, "Process Error: check_thread failed to pop pages, "
                   "bailing\n");
       else
-        result = 1;
+        result = true;
       break;
     }
 
@@ -1414,9 +1438,9 @@ int CheckThread::Work() {
     // Push pages back on the valid queue if we are still going,
     // throw them out otherwise.
     if (IsReadyToRunNoPause())
-      result &= sat_->PutValid(&pe);
+      result = result && sat_->PutValid(&pe);
     else
-      result &= sat_->PutEmpty(&pe);
+      result = result && sat_->PutEmpty(&pe);
     if (!result) {
       logprintf(0, "Process Error: check_thread failed to push pages, "
                 "bailing\n");
@@ -1429,24 +1453,24 @@ int CheckThread::Work() {
   status_ = result;
   logprintf(9, "Log: Completed %d: Check thread. Status %d, %d pages checked\n",
             thread_num_, status_, pages_copied_);
-  return 1;
+  return result;
 }
 
 
 // Memory copy work loop. Execute until marked done.
-int CopyThread::Work() {
+bool CopyThread::Work() {
   struct page_entry src;
   struct page_entry dst;
-  int result = 1;
+  bool result = true;
   int64 loops = 0;
 
-  logprintf(9, "Log: Starting copy thread %d: cpu %x, mem %x\n",
-            thread_num_, cpu_mask_, tag_);
+  logprintf(9, "Log: Starting copy thread %d: cpu %s, mem %x\n",
+            thread_num_, cpuset_format(&cpu_mask_).c_str(), tag_);
 
   while (IsReadyToRun()) {
     // Pop the needed pages.
-    result &= sat_->GetValid(&src, tag_);
-    result &= sat_->GetEmpty(&dst, tag_);
+    result = result && sat_->GetValid(&src, tag_);
+    result = result && sat_->GetEmpty(&dst, tag_);
     if (!result) {
       logprintf(0, "Process Error: copy_thread failed to pop pages, "
                 "bailing\n");
@@ -1472,8 +1496,8 @@ int CopyThread::Work() {
       dst.pattern = src.pattern;
     }
 
-    result &= sat_->PutValid(&dst);
-    result &= sat_->PutEmpty(&src);
+    result = result && sat_->PutValid(&dst);
+    result = result && sat_->PutEmpty(&src);
 
     // Copy worker-threads yield themselves at the end of each copy loop,
     // to avoid threads from preempting each other in the middle of the inner
@@ -1494,20 +1518,20 @@ int CopyThread::Work() {
   status_ = result;
   logprintf(9, "Log: Completed %d: Copy thread. Status %d, %d pages copied\n",
             thread_num_, status_, pages_copied_);
-  return 1;
+  return result;
 }
 
 // Memory invert work loop. Execute until marked done.
-int InvertThread::Work() {
+bool InvertThread::Work() {
   struct page_entry src;
-  int result = 1;
+  bool result = true;
   int64 loops = 0;
 
   logprintf(9, "Log: Starting invert thread %d\n", thread_num_);
 
   while (IsReadyToRun()) {
     // Pop the needed pages.
-    result &= sat_->GetValid(&src);
+    result = result && sat_->GetValid(&src);
     if (!result) {
       logprintf(0, "Process Error: invert_thread failed to pop pages, "
                 "bailing\n");
@@ -1533,7 +1557,7 @@ int InvertThread::Work() {
     if (sat_->strict())
       CrcCheckPage(&src);
 
-    result &= sat_->PutValid(&src);
+    result = result && sat_->PutValid(&src);
     if (!result) {
       logprintf(0, "Process Error: invert_thread failed to push pages, "
                 "bailing\n");
@@ -1546,7 +1570,7 @@ int InvertThread::Work() {
   status_ = result;
   logprintf(9, "Log: Completed %d: Copy thread. Status %d, %d pages copied\n",
             thread_num_, status_, pages_copied_);
-  return 1;
+  return result;
 }
 
 
@@ -1565,17 +1589,16 @@ bool FileThread::OpenFile(int *pfile) {
     logprintf(0, "Process Error: Failed to create file %s!!\n",
               filename_.c_str());
     pages_copied_ = 0;
-    status_ = 0;
-    return 0;
+    return false;
   }
   *pfile = fd;
-  return 1;
+  return true;
 }
 
 // Close the file.
 bool FileThread::CloseFile(int fd) {
   close(fd);
-  return 1;
+  return true;
 }
 
 // Check sector tagging.
@@ -1615,7 +1638,7 @@ bool FileThread::WritePages(int fd) {
   int strict = sat_->strict();
 
   // Start fresh at beginning of file for each batch of pages.
-  lseek(fd, 0, SEEK_SET);
+  lseek64(fd, 0, SEEK_SET);
   for (int i = 0; i < sat_->disk_pages(); i++) {
     struct page_entry src;
     if (!GetValidPage(&src))
@@ -1770,7 +1793,7 @@ bool FileThread::PagePrepare() {
       logprintf(0, "Process Error: disk thread posix_memalign "
                    "returned %d (fail)\n",
                 result);
-      status_ += 1;
+      status_ = false;
       return false;
     }
   }
@@ -1839,17 +1862,14 @@ bool FileThread::PutValidPage(struct page_entry *src) {
   return true;
 }
 
-
-
 // Copy data from file into memory blocks.
 bool FileThread::ReadPages(int fd) {
   int page_length = sat_->page_length();
   int strict = sat_->strict();
-  int result = 1;
-
+  bool result = true;
 
   // Read our data back out of the file, into it's new location.
-  lseek(fd, 0, SEEK_SET);
+  lseek64(fd, 0, SEEK_SET);
   for (int i = 0; i < sat_->disk_pages(); i++) {
     struct page_entry dst;
     if (!GetEmptyPage(&dst))
@@ -1888,11 +1908,9 @@ bool FileThread::ReadPages(int fd) {
   return result;
 }
 
-
 // File IO work loop. Execute until marked done.
-int FileThread::Work() {
-  int result = 1;
-  int fileresult = 1;
+bool FileThread::Work() {
+  bool result = true;
   int64 loops = 0;
 
   logprintf(9, "Log: Starting file thread %d, file %s, device %s\n",
@@ -1900,13 +1918,17 @@ int FileThread::Work() {
             filename_.c_str(),
             devicename_.c_str());
 
-  if (!PagePrepare())
-    return 0;
+  if (!PagePrepare()) {
+    status_ = false;
+    return false;
+  }
 
   // Open the data IO file.
   int fd = 0;
-  if (!OpenFile(&fd))
-    return 0;
+  if (!OpenFile(&fd)) {
+    status_ = false;
+    return false;
+  }
 
   pass_ = 0;
 
@@ -1919,11 +1941,11 @@ int FileThread::Work() {
   // Loop until done.
   while (IsReadyToRun()) {
     // Do the file write.
-    if (!(fileresult &= WritePages(fd)))
+    if (!(result = result && WritePages(fd)))
       break;
 
     // Do the file read.
-    if (!(fileresult &= ReadPages(fd)))
+    if (!(result = result && ReadPages(fd)))
       break;
 
     loops++;
@@ -1939,7 +1961,7 @@ int FileThread::Work() {
 
   logprintf(9, "Log: Completed %d: file thread status %d, %d pages copied\n",
             thread_num_, status_, pages_copied_);
-  return 1;
+  return result;
 }
 
 bool NetworkThread::IsNetworkStopSet() {
@@ -1965,7 +1987,7 @@ bool NetworkThread::CreateSocket(int *psocket) {
   if (sock == -1) {
     logprintf(0, "Process Error: Cannot open socket\n");
     pages_copied_ = 0;
-    status_ = 0;
+    status_ = false;
     return false;
   }
   *psocket = sock;
@@ -1989,7 +2011,7 @@ bool NetworkThread::Connect(int sock) {
   if (inet_aton(ipaddr_, &dest_addr.sin_addr) == 0) {
     logprintf(0, "Process Error: Cannot resolve %s\n", ipaddr_);
     pages_copied_ = 0;
-    status_ = 0;
+    status_ = false;
     return false;
   }
 
@@ -1997,7 +2019,7 @@ bool NetworkThread::Connect(int sock) {
                     sizeof(struct sockaddr))) {
     logprintf(0, "Process Error: Cannot connect %s\n", ipaddr_);
     pages_copied_ = 0;
-    status_ = 0;
+    status_ = false;
     return false;
   }
   return true;
@@ -2018,7 +2040,7 @@ bool NetworkListenThread::Listen() {
     sat_strerror(errno, buf, sizeof(buf));
     logprintf(0, "Process Error: Cannot bind socket: %s\n", buf);
     pages_copied_ = 0;
-    status_ = 0;
+    status_ = false;
     return false;
   }
   listen(sock_, 3);
@@ -2052,13 +2074,14 @@ bool NetworkListenThread::GetConnection(int *pnewsock) {
   if (newsock < 0)  {
     logprintf(0, "Process Error: Did not receive connection\n");
     pages_copied_ = 0;
-    status_ = 0;
+    status_ = false;
     return false;
   }
   *pnewsock = newsock;
   return true;
 }
 
+// Send a page, return false if a page was not sent.
 bool NetworkThread::SendPage(int sock, struct page_entry *src) {
   int page_length = sat_->page_length();
   char *address = static_cast<char*>(src->addr);
@@ -2074,6 +2097,7 @@ bool NetworkThread::SendPage(int sock, struct page_entry *src) {
         logprintf(0, "Process Error: Thread %d, "
                      "Network write failed, bailing. (%s)\n",
                   thread_num_, buf);
+        status_ = false;
       }
       return false;
     }
@@ -2082,7 +2106,7 @@ bool NetworkThread::SendPage(int sock, struct page_entry *src) {
   return true;
 }
 
-
+// Receive a page. Return false if a page was not received.
 bool NetworkThread::ReceivePage(int sock, struct page_entry *dst) {
   int page_length = sat_->page_length();
   char *address = static_cast<char*>(dst->addr);
@@ -2107,6 +2131,7 @@ bool NetworkThread::ReceivePage(int sock, struct page_entry *dst) {
           logprintf(0, "Process Error: Thread %d, "
                        "Network read failed, bailing (%s).\n",
                     thread_num_, buf);
+          status_ = false;
           // Print arguments and results.
           logprintf(0, "Log: recv(%d, address %x, size %x, 0) == %x, err %d\n",
                     sock, address + (page_length - size),
@@ -2129,9 +2154,9 @@ bool NetworkThread::ReceivePage(int sock, struct page_entry *dst) {
   return true;
 }
 
-
 // Network IO work loop. Execute until marked done.
-int NetworkThread::Work() {
+// Return true if the thread ran as expected.
+bool NetworkThread::Work() {
   logprintf(9, "Log: Starting network thread %d, ip %s\n",
             thread_num_,
             ipaddr_);
@@ -2139,7 +2164,7 @@ int NetworkThread::Work() {
   // Make a socket.
   int sock = 0;
   if (!CreateSocket(&sock))
-    return 0;
+    return false;
 
   // Network IO loop requires network slave thread to have already initialized.
   // We will sleep here for awhile to ensure that the slave thread will be
@@ -2153,17 +2178,17 @@ int NetworkThread::Work() {
 
   // Connect to a slave thread.
   if (!Connect(sock))
-    return 0;
+    return false;
 
   // Loop until done.
-  int result = 1;
+  bool result = true;
   int strict = sat_->strict();
   int64 loops = 0;
   while (IsReadyToRun()) {
     struct page_entry src;
     struct page_entry dst;
-    result &= sat_->GetValid(&src);
-    result &= sat_->GetEmpty(&dst);
+    result = result && sat_->GetValid(&src);
+    result = result && sat_->GetEmpty(&dst);
     if (!result) {
       logprintf(0, "Process Error: net_thread failed to pop pages, "
                 "bailing\n");
@@ -2175,14 +2200,14 @@ int NetworkThread::Work() {
       CrcCheckPage(&src);
 
     // Do the network write.
-    if (!(result &= SendPage(sock, &src)))
+    if (!(result = result && SendPage(sock, &src)))
       break;
 
     // Update pattern reference to reflect new contents.
     dst.pattern = src.pattern;
 
     // Do the network read.
-    if (!(result &= ReceivePage(sock, &dst)))
+    if (!(result = result && ReceivePage(sock, &dst)))
       break;
 
     // Ensure that the transfer ended up with correct data.
@@ -2190,8 +2215,8 @@ int NetworkThread::Work() {
       CrcCheckPage(&dst);
 
     // Return all of our pages to the queue.
-    result &= sat_->PutValid(&dst);
-    result &= sat_->PutEmpty(&src);
+    result = result && sat_->PutValid(&dst);
+    result = result && sat_->PutEmpty(&src);
     if (!result) {
       logprintf(0, "Process Error: net_thread failed to push pages, "
                 "bailing\n");
@@ -2209,7 +2234,7 @@ int NetworkThread::Work() {
   logprintf(9, "Log: Completed %d: network thread status %d, "
                "%d pages copied\n",
             thread_num_, status_, pages_copied_);
-  return 1;
+  return result;
 }
 
 // Spawn slave threads for incoming connections.
@@ -2253,15 +2278,17 @@ bool NetworkListenThread::ReapSlaves() {
 }
 
 // Network listener IO work loop. Execute until marked done.
-int NetworkListenThread::Work() {
-  int result = 1;
+// Return false on fatal software error.
+bool NetworkListenThread::Work() {
   logprintf(9, "Log: Starting network listen thread %d\n",
             thread_num_);
 
   // Make a socket.
   sock_ = 0;
-  if (!CreateSocket(&sock_))
-    return 0;
+  if (!CreateSocket(&sock_)) {
+    status_ = false;
+    return false;
+  }
   logprintf(9, "Log: Listen thread created sock\n");
 
   // Allows incoming connections to be queued up by socket library.
@@ -2296,12 +2323,12 @@ int NetworkListenThread::Work() {
 
   CloseSocket(sock_);
 
-  status_ = result;
+  status_ = true;
   logprintf(9,
             "Log: Completed %d: network listen thread status %d, "
             "%d pages copied\n",
             thread_num_, status_, pages_copied_);
-  return 1;
+  return true;
 }
 
 // Set network reflector socket struct.
@@ -2310,14 +2337,17 @@ void NetworkSlaveThread::SetSock(int sock) {
 }
 
 // Network reflector IO work loop. Execute until marked done.
-int NetworkSlaveThread::Work() {
+// Return false on fatal software error.
+bool NetworkSlaveThread::Work() {
   logprintf(9, "Log: Starting network slave thread %d\n",
             thread_num_);
 
   // Verify that we have a socket.
   int sock = sock_;
-  if (!sock)
-    return 0;
+  if (!sock) {
+    status_ = false;
+    return false;
+  }
 
   // Loop until done.
   int64 loops = 0;
@@ -2328,7 +2358,7 @@ int NetworkSlaveThread::Work() {
     logprintf(0, "Process Error: net slave posix_memalign "
                  "returned %d (fail)\n",
               result);
-    status_ += 1;
+    status_ = false;
     return false;
   }
 
@@ -2351,7 +2381,7 @@ int NetworkSlaveThread::Work() {
 
   pages_copied_ = loops;
   // No results provided from this type of thread.
-  status_ = 1;
+  status_ = true;
 
   // Clean up.
   CloseSocket(sock);
@@ -2360,11 +2390,11 @@ int NetworkSlaveThread::Work() {
             "Log: Completed %d: network slave thread status %d, "
             "%d pages copied\n",
             thread_num_, status_, pages_copied_);
-  return status_;
+  return true;
 }
 
 // Thread work loop. Execute until marked finished.
-int ErrorPollThread::Work() {
+bool ErrorPollThread::Work() {
   logprintf(9, "Log: Starting system error poll thread %d\n", thread_num_);
 
   // This calls a generic error polling function in the Os abstraction layer.
@@ -2375,12 +2405,13 @@ int ErrorPollThread::Work() {
 
   logprintf(9, "Log: Finished system error poll thread %d: %d errors\n",
             thread_num_, errorcount_);
-  status_ = 1;
-  return 1;
+  status_ = true;
+  return true;
 }
 
 // Worker thread to heat up CPU.
-int CpuStressThread::Work() {
+// This thread does not evaluate pass/fail or software error.
+bool CpuStressThread::Work() {
   logprintf(9, "Log: Starting CPU stress thread %d\n", thread_num_);
 
   do {
@@ -2391,8 +2422,8 @@ int CpuStressThread::Work() {
 
   logprintf(9, "Log: Finished CPU stress thread %d:\n",
             thread_num_);
-  status_ = 1;
-  return 1;
+  status_ = true;
+  return true;
 }
 
 CpuCacheCoherencyThread::CpuCacheCoherencyThread(cc_cacheline_data *data,
@@ -2406,7 +2437,8 @@ CpuCacheCoherencyThread::CpuCacheCoherencyThread(cc_cacheline_data *data,
 }
 
 // Worked thread to test the cache coherency of the CPUs
-int CpuCacheCoherencyThread::Work() {
+// Return false on fatal sw error.
+bool CpuCacheCoherencyThread::Work() {
   logprintf(9, "Log: Starting the Cache Coherency thread %d\n",
             cc_thread_num_);
   uint64 time_start, time_end;
@@ -2459,8 +2491,8 @@ int CpuCacheCoherencyThread::Work() {
             cc_thread_num_, us_elapsed, total_inc, inc_rate);
   logprintf(9, "Log: Finished CPU Cache Coherency thread %d:\n",
             cc_thread_num_);
-  status_ = 1;
-  return 1;
+  status_ = true;
+  return true;
 }
 
 DiskThread::DiskThread(DiskBlockTable *block_table) {
@@ -2489,9 +2521,14 @@ DiskThread::DiskThread(DiskBlockTable *block_table) {
   update_block_table_ = 1;
 
   block_buffer_ = NULL;
+
+  blocks_written_ = 0;
+  blocks_read_ = 0;
 }
 
 DiskThread::~DiskThread() {
+  if (block_buffer_)
+    free(block_buffer_);
 }
 
 // Set filename for device file (in /dev).
@@ -2616,6 +2653,7 @@ bool DiskThread::SetParameters(int read_block_size,
   return true;
 }
 
+// Open a device, return false on failure.
 bool DiskThread::OpenDevice(int *pfile) {
   int fd = open(device_name_.c_str(),
                 O_RDWR | O_SYNC | O_DIRECT | O_LARGEFILE,
@@ -2631,6 +2669,7 @@ bool DiskThread::OpenDevice(int *pfile) {
 }
 
 // Retrieves the size (in bytes) of the disk/file.
+// Return false on failure.
 bool DiskThread::GetDiskSize(int fd) {
   struct stat device_stat;
   if (fstat(fd, &device_stat) == -1) {
@@ -2654,7 +2693,7 @@ bool DiskThread::GetDiskSize(int fd) {
     if (block_size == 0) {
       os_->ErrorReport(device_name_.c_str(), "device-size-zero", 1);
       ++errorcount_;
-      status_ = 1;  // Avoid a procedural error.
+      status_ = true;  // Avoid a procedural error.
       return false;
     }
 
@@ -2694,11 +2733,12 @@ int64 DiskThread::GetTime() {
   return tv.tv_sec * 1000000 + tv.tv_usec;
 }
 
+// Do randomized reads and (possibly) writes on a device.
+// Return false on fatal error, either SW or HW.
 bool DiskThread::DoWork(int fd) {
   int64 block_num = 0;
-  blocks_written_ = 0;
-  blocks_read_ = 0;
   int64 num_segments;
+  bool result = true;
 
   if (segment_size_ == -1) {
     num_segments = 1;
@@ -2731,13 +2771,15 @@ bool DiskThread::DoWork(int fd) {
 
   while (IsReadyToRun()) {
     // Write blocks to disk.
-    logprintf(16, "Write phase for disk %s (thread %d).\n",
+    logprintf(16, "Log: Write phase %sfor disk %s (thread %d).\n",
+              non_destructive_ ? "(disabled) " : "",
               device_name_.c_str(), thread_num_);
     while (IsReadyToRunNoPause() &&
            in_flight_sectors_.size() < queue_size_ + 1) {
       // Confine testing to a particular segment of the disk.
       int64 segment = (block_num / blocks_per_segment_) % num_segments;
-      if (block_num % blocks_per_segment_ == 0) {
+      if (!non_destructive_ &&
+          (block_num % blocks_per_segment_ == 0)) {
         logprintf(20, "Log: Starting to write segment %lld out of "
                   "%lld on disk %s (thread %d).\n",
                   segment, num_segments, device_name_.c_str(),
@@ -2768,33 +2810,37 @@ bool DiskThread::DoWork(int fd) {
       if (!non_destructive_) {
         if (!WriteBlockToDisk(fd, block)) {
           block_table_->RemoveBlock(block);
-          continue;
+          return false;
         }
+        blocks_written_++;
       }
 
+      // Block is either initialized by writing, or in nondestructive case,
+      // initialized by being added into the datastructure for later reading.
       block->SetBlockAsInitialized();
 
-      blocks_written_++;
       in_flight_sectors_.push(block);
     }
 
     // Verify blocks on disk.
-    logprintf(20, "Read phase for disk %s (thread %d).\n",
+    logprintf(20, "Log: Read phase for disk %s (thread %d).\n",
               device_name_.c_str(), thread_num_);
     while (IsReadyToRunNoPause() && !in_flight_sectors_.empty()) {
       BlockData *block = in_flight_sectors_.front();
       in_flight_sectors_.pop();
-      ValidateBlockOnDisk(fd, block);
+      if (!ValidateBlockOnDisk(fd, block))
+        return false;
       block_table_->RemoveBlock(block);
       blocks_read_++;
     }
   }
 
   pages_copied_ = blocks_written_ + blocks_read_;
-  return true;
+  return result;
 }
 
 // Do an asynchronous disk I/O operation.
+// Return false if the IO is not set up.
 bool DiskThread::AsyncDiskIO(IoOp op, int fd, void *buf, int64 size,
                             int64 offset, int64 timeout) {
   // Use the Linux native asynchronous I/O interface for reading/writing.
@@ -2808,8 +2854,8 @@ bool DiskThread::AsyncDiskIO(IoOp op, int fd, void *buf, int64 size,
     const char *op_str;
     const char *error_str;
   } operations[2] = {
-    { IOCB_CMD_PREAD, "read", "disk-read-error" },
-    { IOCB_CMD_PWRITE, "write", "disk-write-error" }
+    { IO_CMD_PREAD, "read", "disk-read-error" },
+    { IO_CMD_PWRITE, "write", "disk-write-error" }
   };
 
   struct iocb cb;
@@ -2817,16 +2863,19 @@ bool DiskThread::AsyncDiskIO(IoOp op, int fd, void *buf, int64 size,
 
   cb.aio_fildes = fd;
   cb.aio_lio_opcode = operations[op].opcode;
-  cb.aio_buf = (__u64)buf;
-  cb.aio_nbytes = size;
-  cb.aio_offset = offset;
+  cb.u.c.buf = buf;
+  cb.u.c.nbytes = size;
+  cb.u.c.offset = offset;
 
   struct iocb *cbs[] = { &cb };
   if (io_submit(aio_ctx_, 1, cbs) != 1) {
+    int error = errno;
+    char buf[256];
+    sat_strerror(error, buf, sizeof(buf));
     logprintf(0, "Process Error: Unable to submit async %s "
-                 "on disk %s (thread %d).\n",
+                 "on disk %s (thread %d). Error %d, %s\n",
               operations[op].op_str, device_name_.c_str(),
-              thread_num_);
+              thread_num_, error, buf);
     return false;
   }
 
@@ -2839,7 +2888,8 @@ bool DiskThread::AsyncDiskIO(IoOp op, int fd, void *buf, int64 size,
     // A ctrl-c from the keyboard will cause io_getevents to fail with an
     // EINTR error code.  This is not an error and so don't treat it as such,
     // but still log it.
-    if (errno == EINTR) {
+    int error = errno;
+    if (error == EINTR) {
       logprintf(5, "Log: %s interrupted on disk %s (thread %d).\n",
                 operations[op].op_str, device_name_.c_str(),
                 thread_num_);
@@ -2860,9 +2910,12 @@ bool DiskThread::AsyncDiskIO(IoOp op, int fd, void *buf, int64 size,
     io_destroy(aio_ctx_);
     aio_ctx_ = 0;
     if (io_setup(5, &aio_ctx_)) {
+      int error = errno;
+      char buf[256];
+      sat_strerror(error, buf, sizeof(buf));
       logprintf(0, "Process Error: Unable to create aio context on disk %s"
-                " (thread %d).\n",
-                device_name_.c_str(), thread_num_);
+                " (thread %d) Error %d, %s\n",
+                device_name_.c_str(), thread_num_, error, buf);
     }
 
     return false;
@@ -2901,6 +2954,7 @@ bool DiskThread::AsyncDiskIO(IoOp op, int fd, void *buf, int64 size,
 }
 
 // Write a block to disk.
+// Return false if the block is not written.
 bool DiskThread::WriteBlockToDisk(int fd, BlockData *block) {
   memset(block_buffer_, 0, block->GetSize());
 
@@ -2951,6 +3005,8 @@ bool DiskThread::WriteBlockToDisk(int fd, BlockData *block) {
 }
 
 // Verify a block on disk.
+// Return true if the block was read, also increment errorcount
+// if the block had data errors or performance problems.
 bool DiskThread::ValidateBlockOnDisk(int fd, BlockData *block) {
   int64 blocks = block->GetSize() / read_block_size_;
   int64 bytes_read = 0;
@@ -2964,7 +3020,7 @@ bool DiskThread::ValidateBlockOnDisk(int fd, BlockData *block) {
 
   // Read block from disk and time the read.  If it takes longer than the
   // threshold, complain.
-  if (lseek(fd, address * kSectorSize, SEEK_SET) == -1) {
+  if (lseek64(fd, address * kSectorSize, SEEK_SET) == -1) {
     logprintf(0, "Process Error: Unable to seek to sector %lld in "
               "DiskThread::ValidateSectorsOnDisk on disk %s "
               "(thread %d).\n", address, device_name_.c_str(), thread_num_);
@@ -2976,7 +3032,6 @@ bool DiskThread::ValidateBlockOnDisk(int fd, BlockData *block) {
   // read them in groups of randomly-sized multiples of read block size.
   // This assures all data written on disk by this particular block
   // will be tested using a random reading pattern.
-
   while (blocks != 0) {
     // Test all read blocks in a written block.
     current_blocks = (random() % blocks) + 1;
@@ -3027,7 +3082,9 @@ bool DiskThread::ValidateBlockOnDisk(int fd, BlockData *block) {
   return true;
 }
 
-int DiskThread::Work() {
+// Direct device access thread.
+// Return false on software error.
+bool DiskThread::Work() {
   int fd;
 
   logprintf(9, "Log: Starting disk thread %d, disk %s\n",
@@ -3036,42 +3093,43 @@ int DiskThread::Work() {
   srandom(time(NULL));
 
   if (!OpenDevice(&fd)) {
-    return 0;
+    status_ = false;
+    return false;
   }
 
   // Allocate a block buffer aligned to 512 bytes since the kernel requires it
   // when using direst IO.
-
-  int result = posix_memalign(&block_buffer_, kBufferAlignment,
+  int memalign_result = posix_memalign(&block_buffer_, kBufferAlignment,
                               sat_->page_length());
-  if (result) {
+  if (memalign_result) {
     CloseDevice(fd);
     logprintf(0, "Process Error: Unable to allocate memory for buffers "
                  "for disk %s (thread %d) posix memalign returned %d.\n",
-              device_name_.c_str(), thread_num_, result);
-    status_ += 1;
+              device_name_.c_str(), thread_num_, memalign_result);
+    status_ = false;
     return false;
   }
 
   if (io_setup(5, &aio_ctx_)) {
+    CloseDevice(fd);
     logprintf(0, "Process Error: Unable to create aio context for disk %s"
               " (thread %d).\n",
               device_name_.c_str(), thread_num_);
-    return 0;
+    status_ = false;
+    return false;
   }
 
-  DoWork(fd);
+  bool result = DoWork(fd);
 
-  status_ = 1;
+  status_ = result;
 
   io_destroy(aio_ctx_);
   CloseDevice(fd);
-  free(block_buffer_);
 
   logprintf(9, "Log: Completed %d (disk %s): disk thread status %d, "
                "%d pages copied\n",
             thread_num_, device_name_.c_str(), status_, pages_copied_);
-  return 1;
+  return result;
 }
 
 RandomDiskThread::RandomDiskThread(DiskBlockTable *block_table)
@@ -3082,15 +3140,14 @@ RandomDiskThread::RandomDiskThread(DiskBlockTable *block_table)
 RandomDiskThread::~RandomDiskThread() {
 }
 
+// Workload for random disk thread.
 bool RandomDiskThread::DoWork(int fd) {
-  blocks_read_ = 0;
-  blocks_written_ = 0;
-  logprintf(11, "Random phase for disk %s (thread %d).\n",
+  logprintf(11, "Log: Random phase for disk %s (thread %d).\n",
             device_name_.c_str(), thread_num_);
   while (IsReadyToRun()) {
     BlockData *block = block_table_->GetRandomBlock();
     if (block == NULL) {
-      logprintf(12, "No block available for device %s (thread %d).\n",
+      logprintf(12, "Log: No block available for device %s (thread %d).\n",
                 device_name_.c_str(), thread_num_);
     } else {
       ValidateBlockOnDisk(fd, block);
@@ -3112,6 +3169,8 @@ MemoryRegionThread::~MemoryRegionThread() {
     delete pages_;
 }
 
+// Set a region of memory or MMIO to be tested.
+// Return false if region could not be mapped.
 bool MemoryRegionThread::SetRegion(void *region, int64 size) {
   int plength = sat_->page_length();
   int npages = size / plength;
@@ -3137,6 +3196,8 @@ bool MemoryRegionThread::SetRegion(void *region, int64 size) {
   }
 }
 
+// More detailed error printout for hardware errors in memory or MMIO
+// regions.
 void MemoryRegionThread::ProcessError(struct ErrorRecord *error,
                                       int priority,
                                       const char *message) {
@@ -3187,10 +3248,12 @@ void MemoryRegionThread::ProcessError(struct ErrorRecord *error,
   }
 }
 
-int MemoryRegionThread::Work() {
+// Workload for testion memory or MMIO regions.
+// Return false on software error.
+bool MemoryRegionThread::Work() {
   struct page_entry source_pe;
   struct page_entry memregion_pe;
-  int result = 1;
+  bool result = true;
   int64 loops = 0;
   const uint64 error_constant = 0x00ba00000000ba00LL;
 
@@ -3204,14 +3267,14 @@ int MemoryRegionThread::Work() {
   while (IsReadyToRun()) {
     // Getting pages from SAT and queue.
     phase_ = kPhaseNoPhase;
-    result &= sat_->GetValid(&source_pe);
+    result = result && sat_->GetValid(&source_pe);
     if (!result) {
       logprintf(0, "Process Error: memory region thread failed to pop "
                 "pages from SAT, bailing\n");
       break;
     }
 
-    result &= pages_->PopRandom(&memregion_pe);
+    result = result && pages_->PopRandom(&memregion_pe);
     if (!result) {
       logprintf(0, "Process Error: memory region thread failed to pop "
                 "pages from queue, bailing\n");
@@ -3245,13 +3308,13 @@ int MemoryRegionThread::Work() {
 
     phase_ = kPhaseNoPhase;
     // Storing pages on their proper queues.
-    result &= sat_->PutValid(&source_pe);
+    result = result && sat_->PutValid(&source_pe);
     if (!result) {
       logprintf(0, "Process Error: memory region thread failed to push "
                 "pages into SAT, bailing\n");
       break;
     }
-    result &= pages_->Push(&memregion_pe);
+    result = result && pages_->Push(&memregion_pe);
     if (!result) {
       logprintf(0, "Process Error: memory region thread failed to push "
                 "pages into queue, bailing\n");
@@ -3271,5 +3334,5 @@ int MemoryRegionThread::Work() {
   status_ = result;
   logprintf(9, "Log: Completed %d: Memory Region thread. Status %d, %d "
             "pages checked\n", thread_num_, status_, pages_copied_);
-  return 1;
+  return result;
 }

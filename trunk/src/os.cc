@@ -52,6 +52,7 @@ OsLayer::OsLayer() {
   testmem_ = 0;
   testmemsize_ = 0;
   totalmemsize_ = 0;
+  min_hugepages_bytes_ = 0;
   error_injection_ = false;
   normal_mem_ = true;
   time_initialized_ = 0;
@@ -178,11 +179,20 @@ cpu_set_t *OsLayer::FindCoreMask(int32 region) {
     for (int i = 0; i < num_cpus_per_node_; ++i) {
       CPU_SET(i + region * num_cpus_per_node_, &cpu_sets_[region]);
     }
-    logprintf(5, "Log: Region %d mask 0x%08X\n",
-                 region, cpuset_to_uint32(&cpu_sets_[region]));
     cpu_sets_valid_[region] = true;
+    logprintf(5, "Log: Region %d mask 0x%s\n",
+                 region, FindCoreMaskFormat(region).c_str());
   }
   return &cpu_sets_[region];
+}
+
+// Return cores associated with a given region in hex string.
+string OsLayer::FindCoreMaskFormat(int32 region) {
+  cpu_set_t* mask = FindCoreMask(region);
+  string format = cpuset_format(mask);
+  if (format.size() < 8)
+    format = string(8 - format.size(), '0') + format;
+  return format;
 }
 
 // Report an error in an easily parseable way.
@@ -246,16 +256,20 @@ int64 OsLayer::FindFreeMemSize() {
   }
 
   // We want to leave enough stuff for things to run.
-  // If more than 2GB is present, leave 192M + 5% for other stuff.
+  // If the user specified a minimum amount of memory to expect, require that.
+  // Otherwise, if more than 2GB is present, leave 192M + 5% for other stuff.
   // If less than 2GB is present use 85% of what's available.
   // These are fairly arbitrary numbers that seem to work OK.
   //
   // TODO(nsanders): is there a more correct way to determine target
   // memory size?
-  if (physsize < 2048LL * kMegabyte)
+  if (hugepagesize > 0 && min_hugepages_bytes_ > 0) {
+    minsize = min_hugepages_bytes_;
+  } else if (physsize < 2048LL * kMegabyte) {
     minsize = ((pages * 85) / 100) * pagesize;
-  else
+  } else {
     minsize = ((pages * 95) / 100) * pagesize - (192 * kMegabyte);
+  }
 
   // Use hugepage sizing if available.
   if (hugepagesize > 0) {
@@ -325,10 +339,16 @@ bool OsLayer::AllocateTestMem(int64 length, uint64 paddr_base) {
     if (shmaddr == reinterpret_cast<void*>(-1)) {
       int err = errno;
       char errtxt[256] = "";
-      shmctl(shmid, IPC_RMID, NULL);
       strerror_r(err, errtxt, sizeof(errtxt));
       logprintf(0, "Log: failed to attach shared mem object - err %d (%s).\n",
                 err, errtxt);
+      if (shmctl(shmid, IPC_RMID, NULL) < 0) {
+        int err = errno;
+        char errtxt[256] = "";
+        strerror_r(err, errtxt, sizeof(errtxt));
+        logprintf(0, "Log: failed to remove shared mem object - err %d (%s).\n",
+                  err, errtxt);
+      }
       goto hugepage_failover;
     }
     use_hugepages_ = true;

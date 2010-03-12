@@ -582,11 +582,23 @@ bool Sat::Initialize() {
     bad_status();
     return false;
   }
-  if (error_injection_) os_->set_error_injection(true);
+
+  if (min_hugepages_mbytes_ > 0)
+    os_->SetMinimumHugepagesSize(min_hugepages_mbytes_ * kMegabyte);
+
+  if (!os_->Initialize()) {
+    logprintf(0, "Process Error: Failed to initialize OS layer\n");
+    bad_status();
+    delete os_;
+    return false;
+  }
 
   // Checks that OS/Build/Platform is supported.
   if (!CheckEnvironment())
     return false;
+
+  if (error_injection_)
+    os_->set_error_injection(true);
 
   // Run SAT in monitor only mode, do not continue to allocate resources.
   if (monitor_mode_) {
@@ -641,6 +653,7 @@ Sat::Sat() {
   pages_ = 0;
   size_mb_ = 0;
   size_ = size_mb_ * kMegabyte;
+  min_hugepages_mbytes_ = 0;
   freepages_ = 0;
   paddr_base_ = 0;
 
@@ -764,6 +777,9 @@ bool Sat::ParseArgs(int argc, char **argv) {
 
     // Set number of megabyte to use.
     ARG_IVALUE("-M", size_mb_);
+
+    // Set minimum megabytes of hugepages to require.
+    ARG_IVALUE("-H", min_hugepages_mbytes_);
 
     // Set number of seconds to run.
     ARG_IVALUE("-s", runtime_seconds_);
@@ -972,6 +988,7 @@ bool Sat::ParseArgs(int argc, char **argv) {
 void Sat::PrintHelp() {
   printf("Usage: ./sat(32|64) [options]\n"
          " -M mbytes        megabytes of ram to test\n"
+         " -H mbytes        minimum megabytes of hugepages to require\n"
          " -s seconds       number of seconds to run\n"
          " -m threads       number of memory copy threads to run\n"
          " -i threads       number of memory invert threads to run\n"
@@ -1037,20 +1054,6 @@ void Sat::GoogleOsOptions(std::map<std::string, std::string> *options) {
   // Do nothing, no OS-specific argument on public stressapptest
 }
 
-namespace {
-  // This counts the bits set in a bitmask.
-  // This is used to determine number of cores in an available mask.
-  int countbits(uint32 bitfield) {
-    int numbits = 0;
-    for (int i = 0; i < 32; i++) {
-      if (bitfield & (1 << i)) {
-        numbits++;
-      }
-    }
-    return numbits;
-  }
-}
-
 // Launch the SAT task threads. Returns 0 on error.
 void Sat::InitializeThreads() {
   // Memory copy threads.
@@ -1090,18 +1093,19 @@ void Sat::InitializeThreads() {
       int32 region = region_find(i % region_count_);
       cpu_set_t *cpuset = os_->FindCoreMask(region);
       sat_assert(cpuset);
-      int32 cpu_mask = cpuset_to_uint32(cpuset);
       if (region_mode_ == kLocalNuma) {
         // Choose regions associated with this CPU.
-        thread->set_cpu_mask(cpu_mask);
+        thread->set_cpu_mask(cpuset);
         thread->set_tag(1 << region);
       } else if (region_mode_ == kRemoteNuma) {
         // Choose regions not associated with this CPU..
-        thread->set_cpu_mask(cpu_mask);
+        thread->set_cpu_mask(cpuset);
         thread->set_tag(region_mask_ & ~(1 << region));
       }
     } else {
-      int cores = countbits(thread->AvailableCpus());
+      cpu_set_t available_cpus;
+      thread->AvailableCpus(&available_cpus);
+      int cores = cpuset_count(&available_cpus);
       // Don't restrict thread location if we have more than one
       // thread per core. Not so good for performance.
       if (cpu_stress_threads_ + memory_threads_ <= cores) {
@@ -1110,15 +1114,18 @@ void Sat::InitializeThreads() {
         int nthcore = i;
         int nthbit = (((2 * nthcore) % cores) +
                       (((2 * nthcore) / cores) % 2)) % cores;
-        if (thread->AvailableCpus() != ((1 << cores) - 1)) {
+        cpu_set_t all_cores;
+        cpuset_set_ab(&all_cores, 0, cores);
+        if (!cpuset_isequal(&available_cpus, &all_cores)) {
           // We are assuming the bits are contiguous.
           // Complain if this is not so.
-          logprintf(0, "Log: cores = %x, expected %x\n",
-                    thread->AvailableCpus(), ((1 << (cores + 1)) - 1));
+          logprintf(0, "Log: cores = %s, expected %s\n",
+                    cpuset_format(&available_cpus).c_str(),
+                    cpuset_format(&all_cores).c_str());
         }
 
         // Set thread affinity.
-        thread->set_cpu_mask(1 << nthbit);
+        thread->set_cpu_mask_to_cpu(nthbit);
       }
     }
     memory_vector->insert(memory_vector->end(), thread);
@@ -1238,7 +1245,9 @@ void Sat::InitializeThreads() {
 
     // Don't restrict thread location if we have more than one
     // thread per core. Not so good for performance.
-    int cores = countbits(thread->AvailableCpus());
+    cpu_set_t available_cpus;
+    thread->AvailableCpus(&available_cpus);
+    int cores = cpuset_count(&available_cpus);
     if (cpu_stress_threads_ + memory_threads_ <= cores) {
       // Place a thread on alternating cores first.
       // Go in reverse order for CPU stress threads. This assures interleaved
@@ -1246,13 +1255,16 @@ void Sat::InitializeThreads() {
       int nthcore = (cores - 1) - i;
       int nthbit = (((2 * nthcore) % cores) +
                     (((2 * nthcore) / cores) % 2)) % cores;
-      if (thread->AvailableCpus() != ((1 << cores) - 1)) {
-        logprintf(0, "Log: cores = %x, expected %x\n",
-                  thread->AvailableCpus(), ((1 << (cores + 1)) - 1));
+      cpu_set_t all_cores;
+      cpuset_set_ab(&all_cores, 0, cores);
+      if (!cpuset_isequal(&available_cpus, &all_cores)) {
+        logprintf(0, "Log: cores = %s, expected %s\n",
+                  cpuset_format(&available_cpus).c_str(),
+                  cpuset_format(&all_cores).c_str());
       }
 
       // Set thread affinity.
-      thread->set_cpu_mask(1 << nthbit);
+      thread->set_cpu_mask_to_cpu(nthbit);
     }
 
 
@@ -1298,7 +1310,7 @@ void Sat::InitializeThreads() {
       thread->InitThread(total_threads_++, this, os_, patternlist_,
                          &continuous_status_);
       // Pin the thread to a particular core.
-      thread->set_cpu_mask(1 << tnum);
+      thread->set_cpu_mask_to_cpu(tnum);
 
       // Insert the thread into the vector.
       cc_vector->insert(cc_vector->end(), thread);
