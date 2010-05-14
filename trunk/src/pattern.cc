@@ -393,7 +393,7 @@ int PatternList::Destroy() {
 
 // Return pattern numbered "i"
 Pattern *PatternList::GetPattern(int i) {
-  if (i < size_) {
+  if (static_cast<unsigned int>(i) < size_) {
     return &patterns_[i];
   }
 

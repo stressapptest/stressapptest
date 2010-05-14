@@ -45,7 +45,7 @@ FineLockPEQueue::FineLockPEQueue(
   queue_metric_ = kTouch;
 
   {  // Init all the page locks.
-    for (int64 i = 0; i < q_size_; i++) {
+    for (uint64 i = 0; i < q_size_; i++) {
         pthread_mutex_init(&(pagelocks_[i]), NULL);
         // Pages start out owned (locked) by Sat::InitializePages.
         // A locked state indicates that the page state is unknown,
@@ -147,7 +147,7 @@ int64 FineLockPEQueue::getC(int64 m) {
 
 // Destructor: Clean-up allocated memory and destroy pthread locks.
 FineLockPEQueue::~FineLockPEQueue() {
-  int64 i;
+  uint64 i;
   for (i = 0; i < q_size_; i++)
     pthread_mutex_destroy(&(pagelocks_[i]));
   delete[] pagelocks_;
@@ -173,11 +173,11 @@ bool FineLockPEQueue::QueueAnalysis() {
   }
 
   // Bucketize the page counts by highest bit set.
-  for (int64 i = 0; i < q_size_; i++) {
+  for (uint64 i = 0; i < q_size_; i++) {
     uint32 readcount = pages_[i].touch;
     int b = 0;
     for (b = 0; b < 31; b++) {
-      if (readcount < (1 << b))
+      if (readcount < (1u << b))
         break;
     }
 
@@ -271,7 +271,7 @@ bool FineLockPEQueue::GetPageFromPhysical(uint64 paddr,
                                           struct page_entry *pe) {
   // Traverse through array until finding a page
   // that contains the address we want..
-  for (int64 i = 0; i < q_size_; i++) {
+  for (uint64 i = 0; i < q_size_; i++) {
     uint64 page_addr = pages_[i].paddr;
     // This assumes linear vaddr.
     if ((page_addr <= paddr) && (page_addr + page_size_ > paddr)) {
@@ -335,7 +335,7 @@ bool FineLockPEQueue::GetRandomWithPredicateTag(struct page_entry *pe,
   uint64 next_try = 1;
 
   // Traverse through array until finding a page meeting given predicate.
-  for (int64 i = 0; i < q_size_; i++) {
+  for (uint64 i = 0; i < q_size_; i++) {
     uint64 index = (next_try + first_try) % q_size_;
     // Go through the loop linear conguentially. We are offsetting by
     // 'first_try' so this path will be a different sequence for every

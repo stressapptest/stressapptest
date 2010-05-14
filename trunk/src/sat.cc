@@ -164,26 +164,6 @@ bool Sat::CheckEnvironment() {
     return false;
   }
 
-  if ((address_mode_ == 32) &&
-      (os_->normal_mem()) &&
-      (size_ >= 1499 * kMegabyte)) {
-    if (run_on_anything_) {
-      int64 new_size_mb = 1499;
-      logprintf(1, "Log: 32 bit binary: reducing from %lldMB to %lldMB\n",
-                size_mb_,
-                new_size_mb);
-      size_mb_ = new_size_mb;
-      size_ = size_mb_ * kMegabyte;
-    } else {
-      logprintf(0, "Process Error: %dMB test memory too large "
-                   "for 32 bit binary.\n",
-                static_cast<int>(size_ / kMegabyte));
-      logprintf(0, "Log: Command line option '-A' bypasses this error.\n");
-      bad_status();
-      return false;
-    }
-  }
-
   // If platform is 32 bit Xeon, floor memory size to multiple of 4.
   if (address_mode_ == 32) {
     size_mb_ = (size_mb_ / 4) * 4;
@@ -350,7 +330,7 @@ void Sat::AddrMapUpdate(struct page_entry *pe) {
   for (int i = 0; i < page_length_; i += 4096) {
     uint64 paddr = os_->VirtualToPhysical(base + i);
 
-    int offset = paddr / 4096 / 8;
+    uint32 offset = paddr / 4096 / 8;
     unsigned char mask = 1 << ((paddr / 4096) % 8);
 
     if (offset >= arraysize) {
@@ -969,7 +949,8 @@ bool Sat::ParseArgs(int argc, char **argv) {
   }
 
   // Set disk_pages_ if filesize or page size changed.
-  if (filesize != page_length_ * disk_pages_) {
+  if (filesize != static_cast<uint64>(page_length_) *
+                  static_cast<uint64>(disk_pages_)) {
     disk_pages_ = filesize / page_length_;
     if (disk_pages_ == 0)
       disk_pages_ = 1;
@@ -1014,7 +995,7 @@ void Sat::PrintHelp() {
          " --force_errors_like_crazy   inject a lot of false errors "
          "to test error handling\n"
          " -F               don't result check each transaction\n"
-         "--stop_on_errors  Stop after finding the first error.\n"
+         " --stop_on_errors  Stop after finding the first error.\n"
          " --read-block-size     size of block for reading (-d)\n"
          " --write-block-size    size of block for writing (-d). If not "
          "defined, the size of block for writing will be defined as the "
@@ -1041,7 +1022,7 @@ void Sat::PrintHelp() {
          " --pause_duration duration (in seconds) of each pause\n"
          " --local_numa : choose memory regions associated with "
          "each CPU to be tested by that CPU\n"
-         "--remote_numa : choose memory regions not associated with "
+         " --remote_numa : choose memory regions not associated with "
          "each CPU to be tested by that CPU\n");
 }
 
@@ -1850,7 +1831,7 @@ bool Sat::Cleanup() {
     delete[] page_bitmap_;
   }
 
-  for (int i = 0; i < blocktables_.size(); i++) {
+  for (size_t i = 0; i < blocktables_.size(); i++) {
     delete blocktables_[i];
   }
 

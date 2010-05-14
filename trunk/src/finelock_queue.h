@@ -57,7 +57,9 @@ class FineLockPEQueue {
   uint64 GetRandom64FromSlot(int slot);
 
   // Helper function to check index range, returns true if index is valid.
-  bool valid_index(int64 index) { return index >= 0 && index < q_size_; }
+  bool valid_index(int64 index) {
+    return index >= 0 && static_cast<uint64>(index) < q_size_;
+  }
 
   // Returns true if page entry is valid, false otherwise.
   static bool page_is_valid(struct page_entry *pe) {
@@ -85,7 +87,7 @@ class FineLockPEQueue {
 
   pthread_mutex_t *pagelocks_;  // Per-page-entry locks.
   struct page_entry *pages_;     // Where page entries are held.
-  int64 q_size_;                 // Size of the queue.
+  uint64 q_size_;                // Size of the queue.
   int64 page_size_;              // For calculating array index from offset.
 
   enum {

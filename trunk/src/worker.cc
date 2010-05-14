@@ -86,6 +86,9 @@ namespace {
     int cpu;
 #if defined(STRESSAPPTEST_CPU_X86_64) || defined(STRESSAPPTEST_CPU_I686)
     __asm __volatile("cpuid" : "=b" (cpu) : "a" (1) : "cx", "dx");
+#elif defined(STRESSAPPTEST_CPU_ARMV7A)
+  #warning "Unsupported CPU type ARMV7A: unable to determine core ID."
+    cpu = 0;
 #else
   #warning "Unsupported CPU type: unable to determine core ID."
     cpu = 0;
@@ -1953,7 +1956,6 @@ bool FileThread::Work() {
   }
 
   pages_copied_ = loops * sat_->disk_pages();
-  status_ = result;
 
   // Clean up.
   CloseFile(fd);
@@ -1961,7 +1963,10 @@ bool FileThread::Work() {
 
   logprintf(9, "Log: Completed %d: file thread status %d, %d pages copied\n",
             thread_num_, status_, pages_copied_);
-  return result;
+  // Failure to read from device indicates hardware,
+  // rather than procedural SW error.
+  status_ = true;
+  return true;
 }
 
 bool NetworkThread::IsNetworkStopSet() {
@@ -2259,7 +2264,7 @@ bool NetworkListenThread::ReapSlaves() {
   // Gather status and reap threads.
   logprintf(12, "Log: Joining all outstanding threads\n");
 
-  for (int i = 0; i < child_workers_.size(); i++) {
+  for (size_t i = 0; i < child_workers_.size(); i++) {
     NetworkSlaveThread& child_thread = child_workers_[i]->thread;
     logprintf(12, "Log: Joining slave thread %d\n", i);
     child_thread.JoinThread();
@@ -2689,7 +2694,7 @@ bool DiskThread::GetDiskSize(int fd) {
       return false;
     }
 
-    // If an Elephant is initialized with status DEAD its size will be zero.
+    // Zero size indicates nonworking device..
     if (block_size == 0) {
       os_->ErrorReport(device_name_.c_str(), "device-size-zero", 1);
       ++errorcount_;
@@ -2734,11 +2739,11 @@ int64 DiskThread::GetTime() {
 }
 
 // Do randomized reads and (possibly) writes on a device.
-// Return false on fatal error, either SW or HW.
+// Return false on fatal SW error, true on SW success,
+// regardless of whether HW failed.
 bool DiskThread::DoWork(int fd) {
   int64 block_num = 0;
   int64 num_segments;
-  bool result = true;
 
   if (segment_size_ == -1) {
     num_segments = 1;
@@ -2775,7 +2780,8 @@ bool DiskThread::DoWork(int fd) {
               non_destructive_ ? "(disabled) " : "",
               device_name_.c_str(), thread_num_);
     while (IsReadyToRunNoPause() &&
-           in_flight_sectors_.size() < queue_size_ + 1) {
+           in_flight_sectors_.size() <
+               static_cast<size_t>(queue_size_ + 1)) {
       // Confine testing to a particular segment of the disk.
       int64 segment = (block_num / blocks_per_segment_) % num_segments;
       if (!non_destructive_ &&
@@ -2810,7 +2816,7 @@ bool DiskThread::DoWork(int fd) {
       if (!non_destructive_) {
         if (!WriteBlockToDisk(fd, block)) {
           block_table_->RemoveBlock(block);
-          return false;
+          return true;
         }
         blocks_written_++;
       }
@@ -2829,14 +2835,14 @@ bool DiskThread::DoWork(int fd) {
       BlockData *block = in_flight_sectors_.front();
       in_flight_sectors_.pop();
       if (!ValidateBlockOnDisk(fd, block))
-        return false;
+        return true;
       block_table_->RemoveBlock(block);
       blocks_read_++;
     }
   }
 
   pages_copied_ = blocks_written_ + blocks_read_;
-  return result;
+  return true;
 }
 
 // Do an asynchronous disk I/O operation.
@@ -2923,7 +2929,7 @@ bool DiskThread::AsyncDiskIO(IoOp op, int fd, void *buf, int64 size,
 
   // event.res contains the number of bytes written/read or
   // error if < 0, I think.
-  if (event.res != size) {
+  if (event.res != static_cast<uint64>(size)) {
     errorcount_++;
     os_->ErrorReport(device_name_.c_str(), operations[op].error_str, 1);
 

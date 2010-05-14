@@ -38,7 +38,7 @@ void Logger::VLogF(int priority, const char *format, va_list args) {
   }
   char buffer[4096];
   int length = vsnprintf(buffer, sizeof buffer, format, args);
-  if (length >= sizeof buffer) {
+  if (static_cast<size_t>(length) >= sizeof buffer) {
     length = sizeof buffer;
     buffer[sizeof buffer - 1] = '\n';
   }
@@ -96,7 +96,8 @@ void Logger::QueueLogLine(string *line) {
 
 namespace {
 void WriteToFile(const string& line, int fd) {
-  LOGGER_ASSERT(write(fd, line.data(), line.size()) == line.size());
+  LOGGER_ASSERT(write(fd, line.data(), line.size()) ==
+                static_cast<ssize_t>(line.size()));
 }
 }
 

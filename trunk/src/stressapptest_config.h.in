@@ -148,6 +148,9 @@
 /* Define to 1 if strerror_r returns char *. */
 #undef STRERROR_R_CHAR_P
 
+/* Defined if the target CPU is armv7a */
+#undef STRESSAPPTEST_CPU_ARMV7A
+
 /* Defined if the target CPU is i686 */
 #undef STRESSAPPTEST_CPU_I686
 

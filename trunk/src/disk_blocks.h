@@ -100,7 +100,7 @@ class DiskBlockTable {
   typedef vector<int64> PosToAddrVector;
   PosToAddrVector pos_to_addr_;
   AddrToBlockMap addr_to_block_;
-  int64 nelems_;
+  uint64 nelems_;
   int sector_size_;          // Sector size, in bytes
   int write_block_size_;     // Block size, in bytes
   string device_name_;       // Device name

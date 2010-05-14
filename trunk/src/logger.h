@@ -28,7 +28,7 @@
 // Attempts to log additional lines will block when the queue reaches this size.
 // Due to how the logging thread works, up to twice this many log lines may be
 // outstanding at any point.
-static const int kMaxQueueSize = 250;
+static const size_t kMaxQueueSize = 250;
 
 
 // This is only for use by the Logger class, do not use it elsewhere!
