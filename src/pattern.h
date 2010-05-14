@@ -102,7 +102,7 @@ class PatternList {
  private:
   vector<class Pattern> patterns_;
   int weightcount_;  // Total count of pattern weights.
-  int size_;
+  unsigned int size_;
   int initialized_;
   DISALLOW_COPY_AND_ASSIGN(PatternList);
 };

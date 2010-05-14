@@ -225,19 +225,41 @@ bool AdlerMemcpyWarmC(uint64 *dstmem64, uint64 *srcmem64,
 // x86_64 SSE2 assembly implementation of fast and stressful Adler memory copy.
 bool AdlerMemcpyAsm(uint64 *dstmem64, uint64 *srcmem64,
                     unsigned int size_in_bytes, AdlerChecksum *checksum) {
-// Use assembly implementation only with 64bit compilation.
-#ifndef STRESSAPPTEST_CPU_X86_64
-  // Fall back to C implementation for 32bit compilation.
-  return AdlerMemcpyWarmC(dstmem64, srcmem64, size_in_bytes, checksum);
-#else
+// Use assembly implementation where supported.
+#if defined(STRESSAPPTEST_CPU_X86_64) || defined(STRESSAPPTEST_CPU_I686)
+
+// Pull a bit of tricky preprocessing to make the inline asm both
+// 32 bit and 64 bit.
+#ifdef STRESSAPPTEST_CPU_I686  // Instead of coding both, x86...
+#define rAX "%%eax"
+#define rCX "%%ecx"
+#define rDX "%%edx"
+#define rBX "%%ebx"
+#define rSP "%%esp"
+#define rBP "%%ebp"
+#define rSI "%%esi"
+#define rDI "%%edi"
+#endif
+
+#ifdef STRESSAPPTEST_CPU_X86_64  // ...and x64, we use rXX macros.
+#define rAX "%%rax"
+#define rCX "%%rcx"
+#define rDX "%%rdx"
+#define rBX "%%rbx"
+#define rSP "%%rsp"
+#define rBP "%%rbp"
+#define rSI "%%rsi"
+#define rDI "%%rdi"
+#endif
+
   // Elements 0 to 3 are used for holding checksum terms a1, a2,
   // b1, b2 respectively. These elements are filled by asm code.
   // Elements 4 and 5 are used by asm code to for ANDing MMX data and removing
   // 2 words from each MMX register (A MMX reg has 4 words, by ANDing we are
   // setting word index 0 and word index 2 to zero).
   // Element 6 and 7 are used for setting a1 and a2 to 1.
-  volatile uint64 checksum_arr[] = {0, 0, 0, 0,
-    0x00000000ffffffffUL, 0x00000000ffffffffUL, 1, 1};
+  volatile uint64 checksum_arr[] __attribute__ ((aligned(16))) =
+      {0, 0, 0, 0, 0x00000000ffffffffUL, 0x00000000ffffffffUL, 1, 1};
 
   if ((size_in_bytes >> 19) > 0) {
     // Size is too large. Must be less than 2^19 bytes = 512 KB.
@@ -245,23 +267,24 @@ bool AdlerMemcpyAsm(uint64 *dstmem64, uint64 *srcmem64,
   }
 
   // Number of 32-bit words which are not added to a1/a2 in the main loop.
-  uint64 remaining_words = (size_in_bytes % 48) / 4;
+  uint32 remaining_words = (size_in_bytes % 48) / 4;
 
   // Since we are moving 48 bytes at a time number of iterations = total size/48
   // is value of counter.
-  uint64 num_of_48_byte_units = size_in_bytes / 48;
+  uint32 num_of_48_byte_units = size_in_bytes / 48;
 
-  asm volatile(
+  asm volatile (
       // Source address is in ESI (extended source index)
       // destination is in EDI (extended destination index)
-      // and counter is already in ECX (extended counter index).
-      "cmp  $0, %%ecx;"   // Compare counter to zero.
+      // and counter is already in ECX (extended counter
+      // index).
+      "cmp  $0, " rCX ";"   // Compare counter to zero.
       "jz END;"
 
       // XMM6 is initialized with 1 and XMM7 with 0.
-      "prefetchnta  0(%%rsi);"
-      "prefetchnta 64(%%rsi);"
-      "movdqu   48(%%rax), %%xmm6;"
+      "prefetchnta  0(" rSI ");"
+      "prefetchnta 64(" rSI ");"
+      "movdqu   48(" rAX "), %%xmm6;"
       "xorps      %%xmm7, %%xmm7;"
 
       // Start of the loop which copies 48 bytes from source to dst each time.
@@ -269,28 +292,28 @@ bool AdlerMemcpyAsm(uint64 *dstmem64, uint64 *srcmem64,
 
       // Make 6 moves each of 16 bytes from srcmem to XMM registers.
       // We are using 2 words out of 4 words in each XMM register,
-      // word index 0 and word index 2)
-      "movdqa   0(%%rsi), %%xmm0;"
-      "movdqu   4(%%rsi), %%xmm1;"  // Be careful to use unaligned move here.
-      "movdqa  16(%%rsi), %%xmm2;"
-      "movdqu  20(%%rsi), %%xmm3;"
-      "movdqa  32(%%rsi), %%xmm4;"
-      "movdqu  36(%%rsi), %%xmm5;"
+      // word index 0 and word index 2
+      "movdqa   0(" rSI "), %%xmm0;"
+      "movdqu   4(" rSI "), %%xmm1;"  // Be careful to use unaligned move here.
+      "movdqa  16(" rSI "), %%xmm2;"
+      "movdqu  20(" rSI "), %%xmm3;"
+      "movdqa  32(" rSI "), %%xmm4;"
+      "movdqu  36(" rSI "), %%xmm5;"
 
       // Move 3 * 16 bytes from XMM registers to dstmem.
       // Note: this copy must be performed before pinsrw instructions since
       // they will modify the XMM registers.
-      "movntdq %%xmm0,  0(%%rdi);"
-      "movntdq %%xmm2, 16(%%rdi);"
-      "movntdq %%xmm4, 32(%%rdi);"
+      "movntdq %%xmm0,  0(" rDI ");"
+      "movntdq %%xmm2, 16(" rDI ");"
+      "movntdq %%xmm4, 32(" rDI ");"
 
       // Sets the word[1] and word[3] of XMM0 to XMM5 to zero.
-      "andps 32(%%rax), %%xmm0;"
-      "andps 32(%%rax), %%xmm1;"
-      "andps 32(%%rax), %%xmm2;"
-      "andps 32(%%rax), %%xmm3;"
-      "andps 32(%%rax), %%xmm4;"
-      "andps 32(%%rax), %%xmm5;"
+      "andps 32(" rAX "), %%xmm0;"
+      "andps 32(" rAX "), %%xmm1;"
+      "andps 32(" rAX "), %%xmm2;"
+      "andps 32(" rAX "), %%xmm3;"
+      "andps 32(" rAX "), %%xmm4;"
+      "andps 32(" rAX "), %%xmm5;"
 
       // Add XMM0 to XMM6 and then add XMM6 to XMM7.
       // Repeat this for XMM1, ..., XMM5.
@@ -311,43 +334,43 @@ bool AdlerMemcpyAsm(uint64 *dstmem64, uint64 *srcmem64,
       "paddq %%xmm6, %%xmm7;"
 
       // Increment ESI and EDI by 48 bytes and decrement counter by 1.
-      "add $48, %%rsi;"
-      "add $48, %%rdi;"
-      "prefetchnta  0(%%rsi);"
-      "prefetchnta 64(%%rsi);"
-      "dec  %%rcx;"
+      "add $48, " rSI ";"
+      "add $48, " rDI ";"
+      "prefetchnta  0(" rSI ");"
+      "prefetchnta 64(" rSI ");"
+      "dec " rCX ";"
       "jnz TOP;"
 
       // Now only remaining_words 32-bit words are left.
       // make a loop, add first two words to a1 and next two to a2 (just like
       // above loop, the only extra thing we are doing is rechecking
-      // %rdx (=remaining_words) everytime we add a number to a1/a2.
+      // rDX (=remaining_words) everytime we add a number to a1/a2.
       "REM_IS_STILL_NOT_ZERO:\n"
       // Unless remaining_words becomes less than 4 words(16 bytes)
       // there is not much issue and remaining_words will always
       // be a multiple of four by assumption.
-      "cmp $4, %%rdx;"
+      "cmp $4, " rDX ";"
       // In case for some weird reasons if remaining_words becomes
       // less than 4 but not zero then also break the code and go off to END.
       "jl END;"
       // Otherwise just go on and copy data in chunks of 4-words at a time till
       // whole data (<48 bytes) is copied.
-      "movdqa  0(%%rsi), %%xmm0;"      // Copy next 4-words to XMM0 and to XMM1.
+      "movdqa  0(" rSI "), %%xmm0;"    // Copy next 4-words to XMM0 and to XMM1.
 
-      "movdqa  0(%%rsi), %%xmm5;"      // Accomplish movdqu 4(%%rsi) without
+      "movdqa  0(" rSI "), %%xmm5;"    // Accomplish movdqu 4(%rSI) without
       "pshufd $0x39, %%xmm5, %%xmm1;"  // indexing off memory boundary.
 
-      "movntdq %%xmm0,  0(%%rdi);"     // Copy 4-words to destination.
-      "andps  32(%%rax), %%xmm0;"
-      "andps  32(%%rax), %%xmm1;"
+      "movntdq %%xmm0,  0(" rDI ");"   // Copy 4-words to destination.
+      "andps  32(" rAX "), %%xmm0;"
+      "andps  32(" rAX "), %%xmm1;"
       "paddq     %%xmm0, %%xmm6;"
       "paddq     %%xmm6, %%xmm7;"
       "paddq     %%xmm1, %%xmm6;"
       "paddq     %%xmm6, %%xmm7;"
-      "add $16, %%rsi;"
-      "add $16, %%rdi;"
-      "sub $4, %%rdx;"
-      // Decrement %%rdx by 4 since %%rdx is number of 32-bit
+      "add $16, " rSI ";"
+      "add $16, " rDI ";"
+      "sub $4, " rDX ";"
+      // Decrement %rDX by 4 since %rDX is number of 32-bit
       // words left after considering all 48-byte units.
       "jmp REM_IS_STILL_NOT_ZERO;"
 
@@ -356,8 +379,8 @@ bool AdlerMemcpyAsm(uint64 *dstmem64, uint64 *srcmem64,
       // 64 bit numbers and have to be converted to 64 bit numbers)
       // seems like Adler128 (since size of each part is 4 byte rather than
       // 1 byte).
-      "movdqa %%xmm6,   0(%%rax);"
-      "movdqa %%xmm7,  16(%%rax);"
+      "movdqa %%xmm6,   0(" rAX ");"
+      "movdqa %%xmm7,  16(" rAX ");"
       "sfence;"
 
       // No output registers.
@@ -376,5 +399,8 @@ bool AdlerMemcpyAsm(uint64 *dstmem64, uint64 *srcmem64,
   // that there is no problem with memory this just mean that data was copied
   // from src to dst and checksum was calculated successfully).
   return true;
+#else
+  // Fall back to C implementation for anything else.
+  return AdlerMemcpyWarmC(dstmem64, srcmem64, size_in_bytes, checksum);
 #endif
 }

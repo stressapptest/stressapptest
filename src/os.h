@@ -125,6 +125,8 @@ class OsLayer {
     asm volatile("mfence");
     asm volatile("clflush (%0)" :: "r" (vaddr));
     asm volatile("mfence");
+#elif defined(STRESSAPPTEST_CPU_ARMV7A)
+  #warning "Unsupported CPU type ARMV7A: Unable to force cache flushes."
 #else
   #warning "Unsupported CPU type: Unable to force cache flushes."
 #endif
@@ -152,6 +154,9 @@ class OsLayer {
     datacast_t data;
     __asm __volatile("rdtsc" : "=a" (data.l32.l), "=d"(data.l32.h));
     tsc = data.l64;
+#elif defined(STRESSAPPTEST_CPU_ARMV7A)
+  #warning "Unsupported CPU type ARMV7A: your build may not function correctly"
+    tsc = 0;
 #else
   #warning "Unsupported CPU type: your build may not function correctly"
     tsc = 0;
@@ -181,6 +186,8 @@ class OsLayer {
 
   // Returns 32 for 32-bit, 64 for 64-bit.
   virtual int AddressMode();
+  // Update OsLayer state regarding cpu support for various features.
+  virtual void GetFeatures();
 
   // Open, read, write pci cfg through /proc/bus/pci. fd is /proc/pci file.
   virtual int PciOpen(int bus, int device, int function);
@@ -217,12 +224,10 @@ class OsLayer {
   // Detect all PCI Devices.
   virtual PCIDevices GetPCIDevices();
 
-  // Default platform dependent warm Adler memcpy to C implementation
-  // for compatibility.
+  // Disambiguate between different "warm" memcopies.
   virtual bool AdlerMemcpyWarm(uint64 *dstmem, uint64 *srcmem,
                                unsigned int size_in_bytes,
-                               AdlerChecksum *checksum)
-    {return AdlerMemcpyWarmC(dstmem, srcmem, size_in_bytes, checksum);}
+                               AdlerChecksum *checksum);
 
   // Store a callback to use to print
   // app-specific info about the last error location.
@@ -237,12 +242,14 @@ class OsLayer {
 
  protected:
   void *testmem_;                // Location of test memory.
-  int64 testmemsize_;            // Size of test memory.
+  uint64 testmemsize_;           // Size of test memory.
   int64 totalmemsize_;           // Size of available memory.
   int64 min_hugepages_bytes_;    // Minimum hugepages size.
   bool  error_injection_;        // Do error injection?
   bool  normal_mem_;             // Memory DMA capable?
   bool  use_hugepages_;          // Use hugepage shmem?
+  bool  use_posix_shm_;          // Use 4k page shmem?
+  bool  dynamic_mapped_shmem_;   // Conserve virtual address space.
   int   shmid_;                  // Handle to shmem
 
   int64 regionsize_;             // Size of memory "regions"
@@ -250,6 +257,10 @@ class OsLayer {
   int   num_cpus_;               // Number of cpus in the system.
   int   num_nodes_;              // Number of nodes in the system.
   int   num_cpus_per_node_;      // Number of cpus per node in the system.
+  int   address_mode_;           // Are we running 32 or 64 bit?
+  bool  has_sse2_;               // Do we have sse2 instructions?
+  bool  has_clflush_;            // Do we have clflush instructions?
+
 
   time_t time_initialized_;      // Start time of test.
 

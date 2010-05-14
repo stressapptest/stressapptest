@@ -53,8 +53,12 @@ OsLayer::OsLayer() {
   testmemsize_ = 0;
   totalmemsize_ = 0;
   min_hugepages_bytes_ = 0;
-  error_injection_ = false;
   normal_mem_ = true;
+  use_hugepages_ = false;
+  use_posix_shm_ = false;
+  dynamic_mapped_shmem_ = false;
+  shmid_ = 0;
+
   time_initialized_ = 0;
 
   regionsize_ = 0;
@@ -64,6 +68,13 @@ OsLayer::OsLayer() {
   num_cpus_per_node_ = 0;
   error_diagnoser_ = 0;
   err_log_callback_ = 0;
+  error_injection_ = false;
+
+  void *pvoid = 0;
+  address_mode_ = sizeof(pvoid) * 8;
+
+  has_clflush_ = false;
+  has_sse2_ = false;
 }
 
 // OsLayer cleanup.
@@ -75,8 +86,9 @@ OsLayer::~OsLayer() {
 // OsLayer initialization.
 bool OsLayer::Initialize() {
   time_initialized_ = time(NULL);
-  use_hugepages_ = false;
-  shmid_ = 0;
+  // Detect asm support.
+  GetFeatures();
+
   if (num_cpus_ == 0) {
     num_nodes_ = 1;
     num_cpus_ = sysconf(_SC_NPROCESSORS_ONLN);
@@ -129,12 +141,52 @@ list<string> OsLayer::FindFileDevices() {
   return locations;
 }
 
+
+// Get HW core features from cpuid instruction.
+void OsLayer::GetFeatures() {
+#if defined(STRESSAPPTEST_CPU_X86_64) || defined(STRESSAPPTEST_CPU_I686)
+  // CPUID features documented at:
+  // http://www.sandpile.org/ia32/cpuid.htm
+  int ax, bx, cx, dx;
+  __asm__ __volatile__ (
+      "cpuid": "=a" (ax), "=b" (bx), "=c" (cx), "=d" (dx) : "a" (1));
+  has_clflush_ = (dx >> 19) & 1;
+  has_sse2_ = (dx >> 26) & 1;
+
+  logprintf(9, "Log: has clflush: %s, has sse2: %s\n",
+            has_clflush_ ? "true" : "false",
+            has_sse2_ ? "true" : "false");
+#elif defined(STRESSAPPTEST_CPU_PPC)
+  // All PPC implementations have cache flush instructions.
+  has_clflush_ = true;
+#elif defined(STRESSAPPTEST_CPU_ARMV7A)
+#warning "Unsupported CPU type ARMV7A: unable to determine feature set."
+#else
+#warning "Unsupported CPU type: unable to determine feature set."
+#endif
+}
+
+
 // We need to flush the cacheline here.
 void OsLayer::Flush(void *vaddr) {
   // Use the generic flush. This function is just so we can override
   // this if we are so inclined.
-  FastFlush(vaddr);
+  if (has_clflush_)
+    FastFlush(vaddr);
 }
+
+
+// Run C or ASM copy as appropriate..
+bool OsLayer::AdlerMemcpyWarm(uint64 *dstmem, uint64 *srcmem,
+                              unsigned int size_in_bytes,
+                              AdlerChecksum *checksum) {
+  if (has_sse2_) {
+    return AdlerMemcpyAsm(dstmem, srcmem, size_in_bytes, checksum);
+  } else {
+    return AdlerMemcpyWarmC(dstmem, srcmem, size_in_bytes, checksum);
+  }
+}
+
 
 // Translate user virtual to physical address.
 int OsLayer::FindDimm(uint64 addr, char *buf, int len) {
@@ -317,65 +369,155 @@ bool OsLayer::AllocateTestMem(int64 length, uint64 paddr_base) {
   // Try hugepages first.
   void *buf = 0;
 
+  sat_assert(length >= 0);
+
   if (paddr_base)
     logprintf(0, "Process Error: non zero paddr_base %#llx is not supported,"
               " ignore.\n", paddr_base);
 
-  {  // Allocate hugepage mapped memory.
-    int shmid;
-    void *shmaddr;
+  // Determine optimal memory allocation path.
+  bool prefer_hugepages = false;
+  bool prefer_posix_shm = false;
+  bool prefer_dynamic_mapping = false;
 
-    if ((shmid = shmget(2, length,
-            SHM_HUGETLB | IPC_CREAT | SHM_R | SHM_W)) < 0) {
-      int err = errno;
-      char errtxt[256] = "";
-      strerror_r(err, errtxt, sizeof(errtxt));
-      logprintf(12, "Log: failed to allocate shared mem object - err %d (%s)\n",
-                err, errtxt);
-      goto hugepage_failover;
-    }
-
-    shmaddr = shmat(shmid, NULL, NULL);
-    if (shmaddr == reinterpret_cast<void*>(-1)) {
-      int err = errno;
-      char errtxt[256] = "";
-      strerror_r(err, errtxt, sizeof(errtxt));
-      logprintf(0, "Log: failed to attach shared mem object - err %d (%s).\n",
-                err, errtxt);
-      if (shmctl(shmid, IPC_RMID, NULL) < 0) {
-        int err = errno;
-        char errtxt[256] = "";
-        strerror_r(err, errtxt, sizeof(errtxt));
-        logprintf(0, "Log: failed to remove shared mem object - err %d (%s).\n",
-                  err, errtxt);
-      }
-      goto hugepage_failover;
-    }
-    use_hugepages_ = true;
-    shmid_ = shmid;
-    buf = shmaddr;
-    logprintf(0, "Log: Using hugepages 0x%x at %p.\n", shmid, shmaddr);
+  // Are there enough hugepages?
+  int64 hugepagesize = FindHugePages() * 2 * kMegabyte;
+  // TODO(nsanders): Is there enough /dev/shm? Is there enough free memeory?
+  if ((length >= 1400LL * kMegabyte) && (address_mode_ == 32)) {
+    prefer_dynamic_mapping = true;
+    prefer_posix_shm = true;
+    logprintf(3, "Log: Prefer POSIX shared memory allocation.\n");
+    logprintf(3, "Log: You may need to run "
+                 "'sudo mount -o remount,size=100\% /dev/shm.'\n");
+  } else if (hugepagesize >= length) {
+    prefer_hugepages = true;
+    logprintf(3, "Log: Prefer using hugepace allocation.\n");
+  } else {
+    logprintf(3, "Log: Prefer plain malloc memory allocation.\n");
   }
-  hugepage_failover:
 
+  // Allocate hugepage mapped memory.
+  if (prefer_hugepages) {
+    do { // Allow break statement.
+      int shmid;
+      void *shmaddr;
 
-  if (!use_hugepages_) {
+      if ((shmid = shmget(2, length,
+              SHM_HUGETLB | IPC_CREAT | SHM_R | SHM_W)) < 0) {
+        int err = errno;
+        string errtxt = ErrorString(err);
+        logprintf(3, "Log: failed to allocate shared hugepage "
+                      "object - err %d (%s)\n",
+                  err, errtxt.c_str());
+        logprintf(3, "Log: sysctl -w vm.nr_hugepages=XXX allows hugepages.\n");
+        break;
+      }
+
+      shmaddr = shmat(shmid, NULL, NULL);
+      if (shmaddr == reinterpret_cast<void*>(-1)) {
+        int err = errno;
+        string errtxt = ErrorString(err);
+        logprintf(0, "Log: failed to attach shared "
+                     "hugepage object - err %d (%s).\n",
+                  err, errtxt.c_str());
+        if (shmctl(shmid, IPC_RMID, NULL) < 0) {
+          int err = errno;
+          string errtxt = ErrorString(err);
+          logprintf(0, "Log: failed to remove shared "
+                       "hugepage object - err %d (%s).\n",
+                    err, errtxt.c_str());
+        }
+        break;
+      }
+      use_hugepages_ = true;
+      shmid_ = shmid;
+      buf = shmaddr;
+      logprintf(0, "Log: Using shared hugepage object 0x%x at %p.\n",
+                shmid, shmaddr);
+    } while (0);
+  }
+
+  if ((!use_hugepages_) && prefer_posix_shm) {
+    do {
+      int shm_object;
+      void *shmaddr = NULL;
+
+      shm_object = shm_open("/stressapptest", O_CREAT | O_RDWR, S_IRWXU);
+      if (shm_object < 0) {
+        int err = errno;
+        string errtxt = ErrorString(err);
+        logprintf(3, "Log: failed to allocate shared "
+                      "smallpage object - err %d (%s)\n",
+                  err, errtxt.c_str());
+        break;
+      }
+
+      if (0 > ftruncate(shm_object, length)) {
+        int err = errno;
+        string errtxt = ErrorString(err);
+        logprintf(3, "Log: failed to ftruncate shared "
+                      "smallpage object - err %d (%s)\n",
+                  err, errtxt.c_str());
+        break;
+      }
+
+      // 32 bit linux apps can only use ~1.4G of address space.
+      // Use dynamic mapping for allocations larger than that.
+      // Currently perf hit is ~10% for this.
+      if (prefer_dynamic_mapping) {
+        dynamic_mapped_shmem_ = true;
+      } else {
+        // Do a full mapping here otherwise.
+        shmaddr = mmap64(NULL, length, PROT_READ | PROT_WRITE,
+                         MAP_SHARED | MAP_NORESERVE | MAP_LOCKED | MAP_POPULATE,
+                         shm_object, NULL);
+        if (shmaddr == reinterpret_cast<void*>(-1)) {
+          int err = errno;
+          string errtxt = ErrorString(err);
+          logprintf(0, "Log: failed to map shared "
+                       "smallpage object - err %d (%s).\n",
+                    err, errtxt.c_str());
+          break;
+        }
+      }
+
+      use_posix_shm_ = true;
+      shmid_ = shm_object;
+      buf = shmaddr;
+      char location_message[256] = "";
+      if (dynamic_mapped_shmem_) {
+        sprintf(location_message, "mapped as needed");
+      } else {
+        sprintf(location_message, "at %p", shmaddr);
+      }
+      logprintf(0, "Log: Using posix shared memory object 0x%x %s.\n",
+                shm_object, location_message);
+    } while (0);
+    shm_unlink("/stressapptest");
+  }
+
+  if (!use_hugepages_ && !use_posix_shm_) {
     // Use memalign to ensure that blocks are aligned enough for disk direct IO.
     buf = static_cast<char*>(memalign(4096, length));
-    if (buf)
+    if (buf) {
       logprintf(0, "Log: Using memaligned allocation at %p.\n", buf);
-    else
+    } else {
       logprintf(0, "Process Error: memalign returned 0\n");
+      if ((length >= 1499LL * kMegabyte) && (address_mode_ == 32)) {
+        logprintf(0, "Log: You are trying to allocate > 1.4G on a 32 "
+                     "bit process. Please setup shared memory.\n");
+      }
+    }
   }
 
   testmem_ = buf;
-  if (buf) {
+  if (buf || dynamic_mapped_shmem_) {
     testmemsize_ = length;
   } else {
     testmemsize_ = 0;
   }
 
-  return (buf != 0);
+  return (buf != 0) || dynamic_mapped_shmem_;
 }
 
 // Free the test memory.
@@ -384,6 +526,11 @@ void OsLayer::FreeTestMem() {
     if (use_hugepages_) {
       shmdt(testmem_);
       shmctl(shmid_, IPC_RMID, NULL);
+    } else if (use_posix_shm_) {
+      if (!dynamic_mapped_shmem_) {
+        munmap(testmem_, testmemsize_);
+      }
+      close(shmid_);
     } else {
       free(testmem_);
     }
@@ -396,11 +543,37 @@ void OsLayer::FreeTestMem() {
 // Prepare the target memory. It may requre mapping in, or this may be a noop.
 void *OsLayer::PrepareTestMem(uint64 offset, uint64 length) {
   sat_assert((offset + length) <= testmemsize_);
+  if (dynamic_mapped_shmem_) {
+    // TODO(nsanders): Check if we can support MAP_NONBLOCK,
+    // and evaluate performance hit from not using it.
+    void * mapping = mmap64(NULL, length, PROT_READ | PROT_WRITE,
+                     MAP_SHARED | MAP_NORESERVE | MAP_LOCKED | MAP_POPULATE,
+                     shmid_, offset);
+    if (mapping == MAP_FAILED) {
+      string errtxt = ErrorString(errno);
+      logprintf(0, "Process Error: PrepareTestMem mmap64(%llx, %llx) failed. "
+                   "error: %s.\n",
+                offset, length, errtxt.c_str());
+      sat_assert(0);
+    }
+    return mapping;
+  }
+
   return reinterpret_cast<void*>(reinterpret_cast<char*>(testmem_) + offset);
 }
 
 // Release the test memory resources, if any.
 void OsLayer::ReleaseTestMem(void *addr, uint64 offset, uint64 length) {
+  if (dynamic_mapped_shmem_) {
+    int retval = munmap(addr, length);
+    if (retval == -1) {
+      string errtxt = ErrorString(errno);
+      logprintf(0, "Process Error: ReleaseTestMem munmap(%p, %llx) failed. "
+                   "error: %s.\n",
+                addr, length, errtxt.c_str());
+      sat_assert(0);
+    }
+  }
 }
 
 // No error polling on unknown systems.
@@ -453,7 +626,7 @@ uint32 OsLayer::PciRead(int fd, uint32 offset, int width) {
     logprintf(0, "Process Error: Can't seek %x\n", offset);
     return 0;
   }
-  if (read(fd, &datacast, size) != size) {
+  if (read(fd, &datacast, size) != static_cast<ssize_t>(size)) {
     logprintf(0, "Process Error: Can't read %x\n", offset);
     return 0;
   }
@@ -502,7 +675,7 @@ void OsLayer::PciWrite(int fd, uint32 offset, uint32 value, int width) {
     logprintf(0, "Process Error: Can't seek %x\n", offset);
     return;
   }
-  if (write(fd, &datacast, size) != size) {
+  if (write(fd, &datacast, size) != static_cast<ssize_t>(size)) {
     logprintf(0, "Process Error: Can't write %x to %x\n", datacast.l32, offset);
     return;
   }
