@@ -16,60 +16,60 @@ You can control the behavior of stressapptest just passing command-line argument
 
 === General arguments === 
 
-  * `-M mbytes` : megabytes of ram to test
-  * `-s seconds` : number of seconds to run
-  * `-m threads` : number of memory copy threads to run
-  * `-i threads` : number of memory invert threads to run
-  * `-C threads` : number of memory CPU stress threads to run
-  * `--paddr_base` : allocate memory starting from this address
-  * `-W` : Use more CPU-stressful memory copy
-  * `-A` : run in degraded mode on incompatible systems
-  * `-p pagesize` : size in bytes of memory chunks
-  * `-n ipaddr` : add a network thread connecting to system at 'ipaddr'.
-  * `--listen` : run a thread to listen for and respond to network threads.
+  * `-M mbytes` : megabytes of ram to test `(auto-detect all memory available)`
+  * `-s seconds` : number of seconds to run `(20)`
+  * `-m threads` : number of memory copy threads to run `(auto-detect to number of CPUs)`
+  * `-i threads` : number of memory invert threads to run `(0)`
+  * `-C threads` : number of memory CPU stress threads to run `(0)`
+  * `--paddr_base` : allocate memory starting from this address `(0, currently no support for none-0)`
+  * `-W` : Use more CPU-stressful memory copy `(false)`
+  * `-A` : run in degraded mode on incompatible systems`(off)`
+  * `-p pagesize` : size in bytes of memory chunks `(1024LL*1024LL)`
+  * `-n ipaddr` : add a network thread connecting to system at 'ipaddr'. `(none)`
+  * `--listen` : run a thread to listen for and respond to network threads. `(0)`
 
 === Error handling ===
 
-  * `-l logfile` : log output to file 'logfile'
-  * `--max_errors n` : exit early after finding 'n' errors
-  * `-v level` : verbosity (0-20), default is 8
-  * `--no_errors` : run without checking for errors.
-  * `--force_errors` : inject false errors to test error handling.
-  * `--force_errors_like_crazy` : inject a lot of false errors to test error handling.
-  * `-F` : don't result check each transaction.
-  * `--stop_on_errors` : Stop after finding the first error.
+  * `-l logfile` : log output to file 'logfile' `(none)`
+  * `--max_errors n` : exit early after finding 'n' errors `(off)`
+  * `-v level` : verbosity (0-20) `(default: 8)`
+  * `--no_errors` : run without checking for errors. `(off)`
+  * `--force_errors` : inject false errors to test error handling. `(off)`
+  * `--force_errors_like_crazy` : inject a lot of false errors to test error handling. `(off)`
+  * `-F` : don't result check each transaction. `(false)`
+  * `--stop_on_errors` : Stop after finding the first error. `(off)`
 
 === Disk testing === 
 
-  * `-d device` : add a direct write disk thread with block device (or file) 'device'
-  * `--findfiles` : find locations to do disk IO automatically
-  * `-f filename` : add a disk thread with tempfile 'filename'
-  * `--filesize size` : size of disk I/O tempfiles
-  * `--read-block-size` : size of block for reading
-  * `--write-block-size` :  size of block for writing. If not defined, the size of block for writing will be defined as the size of block for reading
-  * `--segment-size` : size of segments to split disk into.
-  * `--cache-size` : size of disk cache.
-  * `--blocks-per-segment` : number of blocks to read/write per segment per iteration.
-  * `--read-threshold` : maximum time (in us) a block read should take.
-  * `--write-threshold` : maximum time (in us) a block write should take.
-  * `--random-threads` :  number of random threads for each disk write thread.
-  * `--destructive` : write/wipe disk partition.
+  * `-d device` : add a direct write disk thread with block device (or file) 'device' `(0)`
+  * `--findfiles` : find locations to do disk IO automatically `(false)`
+  * `-f filename` : add a disk thread with tempfile 'filename' `(none)`
+  * `--filesize size` : size of disk I/O tempfiles `(8mb)`
+  * `--read-block-size` : size of block for reading `(512)`
+  * `--write-block-size` :  size of block for writing. `(assume read-block-size if not defined)`
+  * `--segment-size` : size of segments to split disk into. `(1)`
+  * `--cache-size` : size of disk cache. `(16mb)`
+  * `--blocks-per-segment` : number of blocks to read/write per segment per iteration. `(32)`
+  * `--read-threshold` : maximum time(in us) a block read should take. `(100000 usec)`
+  * `--write-threshold` : maximum time(in us) a block write should take. `(100000 usec)`
+  * `--random-threads` :  number of random threads for each disk write thread. `(0)`
+  * `--destructive` : write/wipe disk partition. `(off)`
 
 === Cache coherency test ===
 
-  * `--cc_test` : do the cache coherency testing
-  * `--cc_inc_count` : number of times to increment the cacheline's member
-  * `--cc_line_count` : number of cache line sized data structures to allocate for the cache coherency threads to operate
+  * `--cc_test` : do the cache coherency testing `(off)`
+  * `--cc_inc_count` : number of times to increment the cacheline's member `(1000)`
+  * `--cc_line_count` : number of cache line sized data structures to allocate for the cache coherency threads to operate `(2)`
 
 === Power spike control === 
 
-  * `--pause_delay` : delay (in seconds) between power spikes
-  * `--pause_duration` : duration (in seconds) of each pause
+  * `--pause_delay` : delay (in seconds) between power spikes `(600)`
+  * `--pause_duration` : duration (in seconds) of each pause `(15)`
 
 === NUMA control===
 
-  * `--local_numa` :  choose memory regions associated with each CPU to be tested by that CPU"
-  * `--remote_numa` : choose memory regions not associated with each CPU to be tested by that CPU
+  * `--local_numa` :  choose memory regions associated with each CPU to be tested by that CPU `(off)`
+  * `--remote_numa` : choose memory regions not associated with each CPU to be tested by that CPU `(off)`
 
 === Example command lines ===
 
