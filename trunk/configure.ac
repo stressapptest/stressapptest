@@ -1,5 +1,15 @@
 AC_PREREQ(2.61)
-AC_INIT(stressapptest, 1.0.3_autoconf, opensource@google.com)
+AC_INIT(stressapptest, 1.0.4_autoconf, opensource@google.com)
+
+AC_ARG_WITH(static, [  --with-static            enable static linking])
+
+if test "$with_static" == "yes"
+then
+	AC_MSG_NOTICE([Compiling with staticaly linked libraries.])
+	LIBS="$LIBS -static"
+else
+	AC_MSG_NOTICE([Compiling with dynamically linked libraries.])
+fi
 
 AC_CANONICAL_HOST
 AC_CANONICAL_BUILD
@@ -93,8 +103,10 @@ CXXFLAGS="$CXXFLAGS -O3 -funroll-all-loops  -funroll-loops -DNDEBUG"
 # Checks for header files.
 AC_HEADER_DIRENT
 AC_HEADER_STDC
-AC_CHECK_HEADERS([arpa/inet.h fcntl.h malloc.h netdb.h stdint.h stdlib.h string.h sys/ioctl.h sys/socket.h sys/time.h unistd.h])
-AC_CHECK_HEADERS([pthread.h libaio.h])
+AC_CHECK_HEADERS([arpa/inet.h fcntl.h malloc.h netdb.h stdint.h stdlib.h string.h sys/ioctl.h sys/socket.h sys/time.h unistd.h], [], [AC_MSG_FAILURE([Missing some header files.])])
+AC_CHECK_HEADERS([pthread.h], [], [AC_MSG_FAILURE([Missing pthread.h.])])
+AC_CHECK_HEADERS([libaio.h], [], [AC_MSG_FAILURE([Missing libaio.h.])])
+AC_CHECK_HEADERS([sys/shm.h], [], [AC_MSG_FAILURE([Missing sys/shm.h from librt.])])
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_HEADER_STDBOOL
@@ -112,7 +124,7 @@ AC_C_VOLATILE
 # We'll check that they work, and fail otherwise.
 # In the future we may provide for testing alternate
 # arguments, but that's not necessary now.
-LIBS="$LIBS -static -lrt -pthread -laio"
+LIBS="$LIBS -lrt -pthread -laio"
 
 # Checking for pthreads
 pthread_arg="not_available"
