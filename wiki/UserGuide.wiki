@@ -12,7 +12,7 @@ on a shell and it will start executing with the default parameters. This usually
 
 ==Command line arguments==
 
-You can control the behavior of stressapptest just passing command-line arguments. Here is a list of the most common arguments (default arguments in parenthesis):
+You can control the behavior of stressapptest just passing command-line arguments. Here is a list of the most common arguments (default arguments in parentheses):
 
 === General arguments === 
 
