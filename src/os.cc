@@ -32,7 +32,9 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/ipc.h>
+#ifdef HAVE_SYS_SHM_H
 #include <sys/shm.h>
+#endif
 #include <unistd.h>
 
 #ifndef SHM_HUGETLB
@@ -75,6 +77,8 @@ OsLayer::OsLayer() {
 
   has_clflush_ = false;
   has_sse2_ = false;
+
+  use_flush_page_cache_ = false;
 }
 
 // OsLayer cleanup.
@@ -164,6 +168,46 @@ void OsLayer::GetFeatures() {
 #else
 #warning "Unsupported CPU type: unable to determine feature set."
 #endif
+}
+
+
+// Enable FlushPageCache to be functional instead of a NOP.
+void OsLayer::ActivateFlushPageCache(void) {
+  logprintf(9, "Log: page cache will be flushed as needed\n");
+  use_flush_page_cache_ = true;
+}
+
+// Flush the page cache to ensure reads come from the disk.
+bool OsLayer::FlushPageCache(void) {
+  if (!use_flush_page_cache_)
+    return true;
+
+  // First, ask the kernel to write the cache to the disk.
+  sync();
+
+  // Second, ask the kernel to empty the cache by writing "1" to
+  // "/proc/sys/vm/drop_caches".
+  static const char *drop_caches_file = "/proc/sys/vm/drop_caches";
+  int dcfile = open(drop_caches_file, O_WRONLY);
+  if (dcfile < 0) {
+    int err = errno;
+    string errtxt = ErrorString(err);
+    logprintf(3, "Log: failed to open %s - err %d (%s)\n",
+              drop_caches_file, err, errtxt.c_str());
+    return false;
+  }
+
+  ssize_t bytes_written = write(dcfile, "1", 1);
+  close(dcfile);
+
+  if (bytes_written != 1) {
+    int err = errno;
+    string errtxt = ErrorString(err);
+    logprintf(3, "Log: failed to write %s - err %d (%s)\n",
+              drop_caches_file, err, errtxt.c_str());
+    return false;
+  }
+  return true;
 }
 
 
@@ -396,6 +440,7 @@ bool OsLayer::AllocateTestMem(int64 length, uint64 paddr_base) {
     logprintf(3, "Log: Prefer plain malloc memory allocation.\n");
   }
 
+#ifdef HAVE_SYS_SHM_H
   // Allocate hugepage mapped memory.
   if (prefer_hugepages) {
     do { // Allow break statement.
@@ -495,6 +540,7 @@ bool OsLayer::AllocateTestMem(int64 length, uint64 paddr_base) {
     } while (0);
     shm_unlink("/stressapptest");
   }
+#endif // HAVE_SYS_SHM_H
 
   if (!use_hugepages_ && !use_posix_shm_) {
     // Use memalign to ensure that blocks are aligned enough for disk direct IO.
@@ -524,8 +570,10 @@ bool OsLayer::AllocateTestMem(int64 length, uint64 paddr_base) {
 void OsLayer::FreeTestMem() {
   if (testmem_) {
     if (use_hugepages_) {
+#ifdef HAVE_SYS_SHM_H
       shmdt(testmem_);
       shmctl(shmid_, IPC_RMID, NULL);
+#endif
     } else if (use_posix_shm_) {
       if (!dynamic_mapped_shmem_) {
         munmap(testmem_, testmemsize_);
@@ -546,9 +594,15 @@ void *OsLayer::PrepareTestMem(uint64 offset, uint64 length) {
   if (dynamic_mapped_shmem_) {
     // TODO(nsanders): Check if we can support MAP_NONBLOCK,
     // and evaluate performance hit from not using it.
+#ifdef HAVE_MMAP64
     void * mapping = mmap64(NULL, length, PROT_READ | PROT_WRITE,
                      MAP_SHARED | MAP_NORESERVE | MAP_LOCKED | MAP_POPULATE,
                      shmid_, offset);
+#else
+    void * mapping = mmap(NULL, length, PROT_READ | PROT_WRITE,
+                     MAP_SHARED | MAP_NORESERVE | MAP_LOCKED | MAP_POPULATE,
+                     shmid_, offset);
+#endif
     if (mapping == MAP_FAILED) {
       string errtxt = ErrorString(errno);
       logprintf(0, "Process Error: PrepareTestMem mmap64(%llx, %llx) failed. "
@@ -750,9 +804,15 @@ bool OsLayer::CpuStressWorkload() {
 
   // Initialize array with random numbers.
   for (int i = 0; i < 100; i++) {
+#ifdef HAVE_RAND_R
     float_arr[i] = rand_r(&seed);
     if (rand_r(&seed) % 2)
       float_arr[i] *= -1.0;
+#else
+    float_arr[i] = rand();
+    if (rand() % 2)
+      float_arr[i] *= -1.0;
+#endif
   }
 
   // Calculate moving average.

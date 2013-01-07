@@ -1,5 +1,5 @@
 AC_PREREQ(2.61)
-AC_INIT(stressapptest, 1.0.4_autoconf, opensource@google.com)
+AC_INIT([stressapptest], [1.0.5_autoconf], [opensource@google.com])
 
 AC_ARG_WITH(static, [  --with-static            enable static linking])
 
@@ -103,10 +103,14 @@ CXXFLAGS="$CXXFLAGS -O3 -funroll-all-loops  -funroll-loops -DNDEBUG"
 # Checks for header files.
 AC_HEADER_DIRENT
 AC_HEADER_STDC
-AC_CHECK_HEADERS([arpa/inet.h fcntl.h malloc.h netdb.h stdint.h stdlib.h string.h sys/ioctl.h sys/socket.h sys/time.h unistd.h], [], [AC_MSG_FAILURE([Missing some header files.])])
-AC_CHECK_HEADERS([pthread.h], [], [AC_MSG_FAILURE([Missing pthread.h.])])
-AC_CHECK_HEADERS([libaio.h], [], [AC_MSG_FAILURE([Missing libaio.h.])])
-AC_CHECK_HEADERS([sys/shm.h], [], [AC_MSG_FAILURE([Missing sys/shm.h from librt.])])
+# Skip malloc.h to prevent redefinition of HAVE_MALLOC_H on some platforms
+AC_CHECK_HEADERS([arpa/inet.h fcntl.h netdb.h stdint.h stdlib.h string.h sys/ioctl.h sys/socket.h sys/time.h unistd.h], [], [AC_MSG_FAILURE([Missing some header files.])])
+AC_CHECK_HEADERS([pthread.h])
+AC_SEARCH_LIBS([pthread_create], [pthread])
+AC_CHECK_HEADERS([libaio.h])
+AC_SEARCH_LIBS([io_setup], [aio])
+AC_CHECK_HEADERS([sys/shm.h])
+AC_SEARCH_LIBS([shm_open], [rt])
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_HEADER_STDBOOL
@@ -114,65 +118,11 @@ AC_C_CONST
 AC_C_INLINE
 AC_TYPE_PID_T
 AC_C_RESTRICT
+AC_TYPE_SIZE_T
 AC_TYPE_SSIZE_T
 AC_HEADER_TIME
 AC_TYPE_UINT16_T
 AC_C_VOLATILE
-
-
-# These are the libraries stressapptest requires to build.
-# We'll check that they work, and fail otherwise.
-# In the future we may provide for testing alternate
-# arguments, but that's not necessary now.
-LIBS="$LIBS -lrt -pthread -laio"
-
-# Checking for pthreads
-pthread_arg="not_available"
-AC_MSG_CHECKING([if pthreads is supported])
-
-pthread_header="#include<pthread.h>"
-pthread_body="pthread_create(0,0,0,0)"
-# Check if compile with no extra argument
-AC_LINK_IFELSE([AC_LANG_PROGRAM($pthread_header, $pthread_body)],
-pthread_arg="")
-
-if test x"$pthread_arg" = x"not_available"; then
-  AC_MSG_FAILURE([Cannot find a proper pthread library])
-else
-  AC_MSG_RESULT([yes])
-fi
-
-# Checking for libaio
-libaio_arg="not_available"
-AC_MSG_CHECKING([if libaio is supported])
-
-libaio_header="#include<libaio.h>"
-libaio_body="io_submit(0,0,0)"
-# Check if compile with no extra argument
-AC_LINK_IFELSE([AC_LANG_PROGRAM($libaio_header, $libaio_body)],
-libaio_arg="")
-
-if test x"$libaio_arg" = x"not_available"; then
-  AC_MSG_FAILURE([Cannot find libaio library, please install libaio-dev])
-else
-  AC_MSG_RESULT([yes])
-fi
-
-# Checking for librt
-librt_arg="not_available"
-AC_MSG_CHECKING([if librt is supported])
-
-librt_header="#include<sys/shm.h>"
-librt_body="shm_open(0, 0, 0)"
-# Check if compile with no extra argument
-AC_LINK_IFELSE([AC_LANG_PROGRAM($librt_header, $librt_body)],
-librt_arg="")
-
-if test x"$librt_arg" = x"not_available"; then
-  AC_MSG_FAILURE([Cannot find librt library])
-else
-  AC_MSG_RESULT([yes])
-fi
 
 
 # Checks for library functions.
@@ -182,7 +132,8 @@ AC_FUNC_SELECT_ARGTYPES
 AC_TYPE_SIGNAL
 AC_FUNC_STRERROR_R
 AC_FUNC_VPRINTF
-AC_CHECK_FUNCS([gettimeofday memset select socket strtol strtoull])
+AC_CHECK_FUNCS([ftruncate gettimeofday memset munmap select socket strtol strtoull])
+AC_CHECK_FUNCS([mmap64 posix_memalign rand_r sched_getaffinity])
 
 AC_CONFIG_FILES([Makefile src/Makefile])
 AC_OUTPUT
