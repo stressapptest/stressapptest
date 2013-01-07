@@ -26,7 +26,9 @@
 #include <sys/time.h>
 #include <sys/types.h>
 
+#ifdef HAVE_LIBAIO_H
 #include <libaio.h>
+#endif
 
 #include <queue>
 #include <set>
@@ -138,9 +140,11 @@ class WorkerStatus {
   enum Status { RUN, PAUSE, STOP };
 
   void WaitOnPauseBarrier() {
+#ifdef _POSIX_BARRIERS
     int error = pthread_barrier_wait(&pause_barrier_);
     if (error != PTHREAD_BARRIER_SERIAL_THREAD)
       sat_assert(error == 0);
+#endif
   }
 
   void AcquireNumWorkersLock() {
@@ -185,8 +189,10 @@ class WorkerStatus {
   pthread_rwlock_t status_rwlock_;
   Status status_;
 
+#ifdef _POSIX_BARRIERS
   // Guaranteed to not be in use when (status_ != PAUSE).
   pthread_barrier_t pause_barrier_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(WorkerStatus);
 };
@@ -749,7 +755,9 @@ class DiskThread : public WorkerThread {
                                                 // not verified.
   void *block_buffer_;        // Pointer to aligned block buffer.
 
+#ifdef HAVE_LIBAIO_H
   io_context_t aio_ctx_;     // Asynchronous I/O context for Linux native AIO.
+#endif
 
   DiskBlockTable *block_table_;  // Disk Block Table, shared by all disk
                                  // threads that read / write at the same

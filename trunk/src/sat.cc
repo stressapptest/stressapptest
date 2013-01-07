@@ -77,7 +77,14 @@ bool Sat::InitializeLogfile() {
   // Open logfile.
   if (use_logfile_) {
     logfile_ = open(logfilename_,
-                    O_WRONLY | O_CREAT | O_DSYNC,
+#if defined(O_DSYNC)
+                    O_DSYNC |
+#elif defined(O_SYNC)
+                    O_SYNC |
+#elif defined(O_FSYNC)
+                    O_FSYNC |
+#endif
+                    O_WRONLY | O_CREAT,
                     S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
     if (logfile_ < 0) {
       printf("Fatal Error: cannot open file %s for logging\n",
@@ -1271,9 +1278,15 @@ void Sat::InitializeThreads() {
     // Allocate all the nums once so that we get a single chunk
     // of contiguous memory.
     int *num;
+#ifdef HAVE_POSIX_MEMALIGN
     int err_result = posix_memalign(
         reinterpret_cast<void**>(&num),
         kCacheLineSize, sizeof(*num) * num_cpus * cc_cacheline_count_);
+#else
+    num = reinterpret_cast<int*>(memalign(kCacheLineSize,
+			sizeof(*num) * num_cpus * cc_cacheline_count_));
+    int err_result = (num == 0);
+#endif
     sat_assert(err_result == 0);
 
     int cline;

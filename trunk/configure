@@ -4958,6 +4958,7 @@ $as_echo "#define STDC_HEADERS 1" >>confdefs.h
 
 fi
 
+# Skip malloc.h to prevent redefinition of HAVE_MALLOC_H on some platforms
 # On IRIX 5.3, sys/types and inttypes.h are conflicting.
 for ac_header in sys/types.h sys/stat.h stdlib.h string.h memory.h strings.h \
 		  inttypes.h stdint.h unistd.h
@@ -4976,7 +4977,7 @@ fi
 done
 
 
-for ac_header in arpa/inet.h fcntl.h malloc.h netdb.h stdint.h stdlib.h string.h sys/ioctl.h sys/socket.h sys/time.h unistd.h
+for ac_header in arpa/inet.h fcntl.h netdb.h stdint.h stdlib.h string.h sys/ioctl.h sys/socket.h sys/time.h unistd.h
 do :
   as_ac_Header=`$as_echo "ac_cv_header_$ac_header" | $as_tr_sh`
 ac_fn_c_check_header_mongrel "$LINENO" "$ac_header" "$as_ac_Header" "$ac_includes_default"
@@ -5003,14 +5004,65 @@ if test "x$ac_cv_header_pthread_h" = x""yes; then :
 #define HAVE_PTHREAD_H 1
 _ACEOF
 
-else
-  { { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
-$as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
-as_fn_error "Missing pthread.h.
-See \`config.log' for more details." "$LINENO" 5; }
 fi
 
 done
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing pthread_create" >&5
+$as_echo_n "checking for library containing pthread_create... " >&6; }
+if test "${ac_cv_search_pthread_create+set}" = set; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_func_search_save_LIBS=$LIBS
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char pthread_create ();
+int
+main ()
+{
+return pthread_create ();
+  ;
+  return 0;
+}
+_ACEOF
+for ac_lib in '' pthread; do
+  if test -z "$ac_lib"; then
+    ac_res="none required"
+  else
+    ac_res=-l$ac_lib
+    LIBS="-l$ac_lib  $ac_func_search_save_LIBS"
+  fi
+  if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_search_pthread_create=$ac_res
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext
+  if test "${ac_cv_search_pthread_create+set}" = set; then :
+  break
+fi
+done
+if test "${ac_cv_search_pthread_create+set}" = set; then :
+
+else
+  ac_cv_search_pthread_create=no
+fi
+rm conftest.$ac_ext
+LIBS=$ac_func_search_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_pthread_create" >&5
+$as_echo "$ac_cv_search_pthread_create" >&6; }
+ac_res=$ac_cv_search_pthread_create
+if test "$ac_res" != no; then :
+  test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
+
+fi
 
 for ac_header in libaio.h
 do :
@@ -5020,14 +5072,65 @@ if test "x$ac_cv_header_libaio_h" = x""yes; then :
 #define HAVE_LIBAIO_H 1
 _ACEOF
 
-else
-  { { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
-$as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
-as_fn_error "Missing libaio.h.
-See \`config.log' for more details." "$LINENO" 5; }
 fi
 
 done
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing io_setup" >&5
+$as_echo_n "checking for library containing io_setup... " >&6; }
+if test "${ac_cv_search_io_setup+set}" = set; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_func_search_save_LIBS=$LIBS
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char io_setup ();
+int
+main ()
+{
+return io_setup ();
+  ;
+  return 0;
+}
+_ACEOF
+for ac_lib in '' aio; do
+  if test -z "$ac_lib"; then
+    ac_res="none required"
+  else
+    ac_res=-l$ac_lib
+    LIBS="-l$ac_lib  $ac_func_search_save_LIBS"
+  fi
+  if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_search_io_setup=$ac_res
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext
+  if test "${ac_cv_search_io_setup+set}" = set; then :
+  break
+fi
+done
+if test "${ac_cv_search_io_setup+set}" = set; then :
+
+else
+  ac_cv_search_io_setup=no
+fi
+rm conftest.$ac_ext
+LIBS=$ac_func_search_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_io_setup" >&5
+$as_echo "$ac_cv_search_io_setup" >&6; }
+ac_res=$ac_cv_search_io_setup
+if test "$ac_res" != no; then :
+  test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
+
+fi
 
 for ac_header in sys/shm.h
 do :
@@ -5037,14 +5140,65 @@ if test "x$ac_cv_header_sys_shm_h" = x""yes; then :
 #define HAVE_SYS_SHM_H 1
 _ACEOF
 
-else
-  { { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
-$as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
-as_fn_error "Missing sys/shm.h from librt.
-See \`config.log' for more details." "$LINENO" 5; }
 fi
 
 done
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing shm_open" >&5
+$as_echo_n "checking for library containing shm_open... " >&6; }
+if test "${ac_cv_search_shm_open+set}" = set; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_func_search_save_LIBS=$LIBS
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char shm_open ();
+int
+main ()
+{
+return shm_open ();
+  ;
+  return 0;
+}
+_ACEOF
+for ac_lib in '' rt; do
+  if test -z "$ac_lib"; then
+    ac_res="none required"
+  else
+    ac_res=-l$ac_lib
+    LIBS="-l$ac_lib  $ac_func_search_save_LIBS"
+  fi
+  if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_search_shm_open=$ac_res
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext
+  if test "${ac_cv_search_shm_open+set}" = set; then :
+  break
+fi
+done
+if test "${ac_cv_search_shm_open+set}" = set; then :
+
+else
+  ac_cv_search_shm_open=no
+fi
+rm conftest.$ac_ext
+LIBS=$ac_func_search_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_shm_open" >&5
+$as_echo "$ac_cv_search_shm_open" >&6; }
+ac_res=$ac_cv_search_shm_open
+if test "$ac_res" != no; then :
+  test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
+
+fi
 
 
 # Checks for typedefs, structures, and compiler characteristics.
@@ -5337,6 +5491,17 @@ _ACEOF
  ;;
  esac
 
+ac_fn_c_check_type "$LINENO" "size_t" "ac_cv_type_size_t" "$ac_includes_default"
+if test "x$ac_cv_type_size_t" = x""yes; then :
+
+else
+
+cat >>confdefs.h <<_ACEOF
+#define size_t unsigned int
+_ACEOF
+
+fi
+
 ac_fn_c_check_type "$LINENO" "ssize_t" "ac_cv_type_ssize_t" "$ac_includes_default"
 if test "x$ac_cv_type_ssize_t" = x""yes; then :
 
@@ -5429,118 +5594,6 @@ $as_echo "#define volatile /**/" >>confdefs.h
 
 fi
 
-
-
-# These are the libraries stressapptest requires to build.
-# We'll check that they work, and fail otherwise.
-# In the future we may provide for testing alternate
-# arguments, but that's not necessary now.
-LIBS="$LIBS -lrt -pthread -laio"
-
-# Checking for pthreads
-pthread_arg="not_available"
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking if pthreads is supported" >&5
-$as_echo_n "checking if pthreads is supported... " >&6; }
-
-pthread_header="#include<pthread.h>"
-pthread_body="pthread_create(0,0,0,0)"
-# Check if compile with no extra argument
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-$pthread_header
-int
-main ()
-{
-$pthread_body
-  ;
-  return 0;
-}
-_ACEOF
-if ac_fn_c_try_link "$LINENO"; then :
-  pthread_arg=""
-fi
-rm -f core conftest.err conftest.$ac_objext \
-    conftest$ac_exeext conftest.$ac_ext
-
-if test x"$pthread_arg" = x"not_available"; then
-  { { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
-$as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
-as_fn_error "Cannot find a proper pthread library
-See \`config.log' for more details." "$LINENO" 5; }
-else
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
-$as_echo "yes" >&6; }
-fi
-
-# Checking for libaio
-libaio_arg="not_available"
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking if libaio is supported" >&5
-$as_echo_n "checking if libaio is supported... " >&6; }
-
-libaio_header="#include<libaio.h>"
-libaio_body="io_submit(0,0,0)"
-# Check if compile with no extra argument
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-$libaio_header
-int
-main ()
-{
-$libaio_body
-  ;
-  return 0;
-}
-_ACEOF
-if ac_fn_c_try_link "$LINENO"; then :
-  libaio_arg=""
-fi
-rm -f core conftest.err conftest.$ac_objext \
-    conftest$ac_exeext conftest.$ac_ext
-
-if test x"$libaio_arg" = x"not_available"; then
-  { { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
-$as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
-as_fn_error "Cannot find libaio library, please install libaio-dev
-See \`config.log' for more details." "$LINENO" 5; }
-else
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
-$as_echo "yes" >&6; }
-fi
-
-# Checking for librt
-librt_arg="not_available"
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking if librt is supported" >&5
-$as_echo_n "checking if librt is supported... " >&6; }
-
-librt_header="#include<sys/shm.h>"
-librt_body="shm_open(0, 0, 0)"
-# Check if compile with no extra argument
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-$librt_header
-int
-main ()
-{
-$librt_body
-  ;
-  return 0;
-}
-_ACEOF
-if ac_fn_c_try_link "$LINENO"; then :
-  librt_arg=""
-fi
-rm -f core conftest.err conftest.$ac_objext \
-    conftest$ac_exeext conftest.$ac_ext
-
-if test x"$librt_arg" = x"not_available"; then
-  { { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
-$as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
-as_fn_error "Cannot find librt library
-See \`config.log' for more details." "$LINENO" 5; }
-else
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
-$as_echo "yes" >&6; }
-fi
 
 
 # Checks for library functions.
@@ -5848,7 +5901,20 @@ fi
 done
 
 
-for ac_func in gettimeofday memset select socket strtol strtoull
+for ac_func in ftruncate gettimeofday memset munmap select socket strtol strtoull
+do :
+  as_ac_var=`$as_echo "ac_cv_func_$ac_func" | $as_tr_sh`
+ac_fn_c_check_func "$LINENO" "$ac_func" "$as_ac_var"
+eval as_val=\$$as_ac_var
+   if test "x$as_val" = x""yes; then :
+  cat >>confdefs.h <<_ACEOF
+#define `$as_echo "HAVE_$ac_func" | $as_tr_cpp` 1
+_ACEOF
+
+fi
+done
+
+for ac_func in mmap64 posix_memalign rand_r sched_getaffinity
 do :
   as_ac_var=`$as_echo "ac_cv_func_$ac_func" | $as_tr_sh`
 ac_fn_c_check_func "$LINENO" "$ac_func" "$as_ac_var"

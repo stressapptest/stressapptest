@@ -101,6 +101,15 @@ class OsLayer {
   // This will output a machine readable line regarding the error.
   virtual bool ErrorReport(const char *part, const char *symptom, int count);
 
+  // Flushes page cache. Used to circumvent the page cache when doing disk
+  // I/O.  This will be a NOP until ActivateFlushPageCache() is called, which
+  // is typically done when opening a file with O_DIRECT fails.
+  // Returns false on error, true on success or NOP.
+  // Subclasses may implement this in machine specific ways..
+  virtual bool FlushPageCache(void);
+  // Enable FlushPageCache() to actually do the flush instead of being a NOP.
+  virtual void ActivateFlushPageCache(void);
+
   // Flushes cacheline. Used to distinguish read or write errors.
   // Subclasses may implement this in machine specific ways..
   // Takes a pointer, and flushed the cacheline containing that pointer.
@@ -260,6 +269,7 @@ class OsLayer {
   int   address_mode_;           // Are we running 32 or 64 bit?
   bool  has_sse2_;               // Do we have sse2 instructions?
   bool  has_clflush_;            // Do we have clflush instructions?
+  bool  use_flush_page_cache_;   // Do we need to flush the page cache?
 
 
   time_t time_initialized_;      // Start time of test.
