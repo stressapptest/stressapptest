@@ -129,8 +129,24 @@ int OsLayer::AddressMode() {
 
 // Translates user virtual to physical address.
 uint64 OsLayer::VirtualToPhysical(void *vaddr) {
-  // Needs platform specific implementation.
-  return 0;
+  uint64 frame, shift;
+  off64_t off = ((uintptr_t)vaddr) / getpagesize() * 8;
+  int fd = open(kPagemapPath, O_RDONLY);
+  if (fd < 0 || lseek64(fd, off, SEEK_SET) != off || read(fd, &frame, 8) != 8) {
+    int err = errno;
+    string errtxt = ErrorString(err);
+    logprintf(0, "Error: failed to access %s with errno %d (%s)\n",
+              kPagemapPath, err, errtxt.c_str());
+    if (fd >= 0)
+      close(fd);
+    return 0;
+  }
+  close(fd);
+  if (!(frame & (1LL << 63)) || (frame & (1LL << 62)))
+    return 0;
+  shift = (frame >> 55) & 0x3f;
+  frame = (frame & 0x007fffffffffffffLL) << shift;
+  return frame | ((uintptr_t)vaddr & ((1LL << shift) - 1));
 }
 
 // Returns the HD device that contains this file.
