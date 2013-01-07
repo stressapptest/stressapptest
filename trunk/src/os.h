@@ -27,6 +27,7 @@
 #include "adler32memcpy.h"  // NOLINT
 #include "sattypes.h"       // NOLINT
 
+const char kPagemapPath[] = "/proc/self/pagemap";
 const char kSysfsPath[] = "/sys/bus/pci/devices";
 
 struct PCIDevice {
