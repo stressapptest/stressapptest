@@ -82,7 +82,17 @@ namespace {
   inline int apicid(void) {
     int cpu;
 #if defined(STRESSAPPTEST_CPU_X86_64) || defined(STRESSAPPTEST_CPU_I686)
-    __asm __volatile("cpuid" : "=b" (cpu) : "a" (1) : "cx", "dx");
+    __asm__ __volatile__ (
+# if defined(STRESSAPPTEST_CPU_I686) && defined(__PIC__)
+        "xchg %%ebx, %%esi;"
+        "cpuid;"
+        "xchg %%esi, %%ebx;"
+        : "=S" (cpu)
+# else
+        "cpuid;"
+        : "=b" (cpu)
+# endif
+        : "a" (1) : "cx", "dx");
 #elif defined(STRESSAPPTEST_CPU_ARMV7A)
   #warning "Unsupported CPU type ARMV7A: unable to determine core ID."
     cpu = 0;

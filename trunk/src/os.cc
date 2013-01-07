@@ -169,7 +169,16 @@ void OsLayer::GetFeatures() {
   // http://www.sandpile.org/ia32/cpuid.htm
   int ax, bx, cx, dx;
   __asm__ __volatile__ (
-      "cpuid": "=a" (ax), "=b" (bx), "=c" (cx), "=d" (dx) : "a" (1));
+# if defined(STRESSAPPTEST_CPU_I686) && defined(__PIC__)
+      "xchg %%ebx, %%esi;"
+      "cpuid;"
+      "xchg %%esi, %%ebx;"
+      : "=S" (bx),
+# else
+      "cpuid;"
+      : "=b" (bx),
+# endif
+        "=a" (ax), "=c" (cx), "=d" (dx) : "a" (1));
   has_clflush_ = (dx >> 19) & 1;
   has_sse2_ = (dx >> 26) & 1;
 
