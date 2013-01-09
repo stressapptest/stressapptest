@@ -107,31 +107,12 @@ AC_HEADER_STDC
 AC_CHECK_HEADERS([arpa/inet.h fcntl.h netdb.h stdint.h stdlib.h string.h sys/ioctl.h sys/socket.h sys/time.h unistd.h], [], [AC_MSG_FAILURE([Missing some header files.])])
 AC_CHECK_HEADERS([pthread.h])
 AC_SEARCH_LIBS([pthread_create], [pthread])
+AC_CHECK_TYPE([pthread_barrier_t], AC_DEFINE(HAVE_PTHREAD_BARRIERS, [1], [Define to 1 if the system has `pthread_barrier'.]))
 AC_CHECK_HEADERS([libaio.h])
 AC_SEARCH_LIBS([io_setup], [aio])
 AC_CHECK_HEADERS([sys/shm.h])
 AC_SEARCH_LIBS([shm_open], [rt])
 
-AC_MSG_CHECKING(for pthread_barrier)
-AC_CACHE_VAL(
-  ac_cv_func_pthread_barrier,
-  AC_TRY_RUN(
-    [
-      #include <pthread.h>
-      int main(void)
-      {
-        pthread_barrier_t t;
-        return 0;
-      }
-    ],
-    ac_cv_func_pthread_barrier=yes,
-    ac_cv_func_pthread_barrier=no
-  )
-)
-AC_MSG_RESULT($ac_cv_func_pthread_barrier)
-if test "$ac_cv_func_pthread_barrier" = "yes"; then
-  AC_DEFINE(HAVE_PTHREAD_BARRIER, [1], [Define to 1 if the system has `pthread_barrier'.])
-fi
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_HEADER_STDBOOL
