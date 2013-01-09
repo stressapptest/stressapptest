@@ -140,7 +140,7 @@ class WorkerStatus {
   enum Status { RUN, PAUSE, STOP };
 
   void WaitOnPauseBarrier() {
-#ifdef _POSIX_BARRIERS
+#ifdef HAVE_PTHREAD_BARRIERS
     int error = pthread_barrier_wait(&pause_barrier_);
     if (error != PTHREAD_BARRIER_SERIAL_THREAD)
       sat_assert(error == 0);
@@ -189,7 +189,7 @@ class WorkerStatus {
   pthread_rwlock_t status_rwlock_;
   Status status_;
 
-#ifdef _POSIX_BARRIERS
+#ifdef HAVE_PTHREAD_BARRIERS
   // Guaranteed to not be in use when (status_ != PAUSE).
   pthread_barrier_t pause_barrier_;
 #endif

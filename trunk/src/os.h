@@ -57,6 +57,14 @@ class OsLayer {
     min_hugepages_bytes_ = min_bytes;
   }
 
+  // Set parameters needed to translate physical address to memory module.
+  void SetDramMappingParams(int interleave_size, int channel_width,
+                            vector< vector<string> > *modules) {
+    interleave_size_ = interleave_size;
+    channel_width_ = channel_width;
+    modules_ = modules;
+  }
+
   // Initializes data strctures and open files.
   // Returns false on error.
   virtual bool Initialize();
@@ -261,6 +269,9 @@ class OsLayer {
   bool  use_posix_shm_;          // Use 4k page shmem?
   bool  dynamic_mapped_shmem_;   // Conserve virtual address space.
   int   shmid_;                  // Handle to shmem
+  vector< vector<string> > *modules_;  // Memory module names per channel.
+  int interleave_size_;          // Channel interleaving chunk size.
+  int channel_width_;            // Channel width in bits.
 
   int64 regionsize_;             // Size of memory "regions"
   int   regioncount_;            // Number of memory "regions"

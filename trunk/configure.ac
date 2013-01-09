@@ -1,5 +1,5 @@
 AC_PREREQ(2.61)
-AC_INIT([stressapptest], [1.0.5_autoconf], [opensource@google.com])
+AC_INIT([stressapptest], [1.0.6_autoconf], [opensource@google.com])
 
 AC_ARG_WITH(static, [  --with-static            enable static linking])
 
@@ -111,6 +111,27 @@ AC_CHECK_HEADERS([libaio.h])
 AC_SEARCH_LIBS([io_setup], [aio])
 AC_CHECK_HEADERS([sys/shm.h])
 AC_SEARCH_LIBS([shm_open], [rt])
+
+AC_MSG_CHECKING(for pthread_barrier)
+AC_CACHE_VAL(
+  ac_cv_func_pthread_barrier,
+  AC_TRY_RUN(
+    [
+      #include <pthread.h>
+      int main(void)
+      {
+        pthread_barrier_t t;
+        return 0;
+      }
+    ],
+    ac_cv_func_pthread_barrier=yes,
+    ac_cv_func_pthread_barrier=no
+  )
+)
+AC_MSG_RESULT($ac_cv_func_pthread_barrier)
+if test "$ac_cv_func_pthread_barrier" = "yes"; then
+  AC_DEFINE(HAVE_PTHREAD_BARRIER, [1], [Define to 1 if the system has `pthread_barrier'.])
+fi
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_HEADER_STDBOOL

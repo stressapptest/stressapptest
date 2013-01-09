@@ -132,10 +132,14 @@ uint64 OsLayer::VirtualToPhysical(void *vaddr) {
   uint64 frame, shift;
   off64_t off = ((uintptr_t)vaddr) / getpagesize() * 8;
   int fd = open(kPagemapPath, O_RDONLY);
-  if (fd < 0 || lseek64(fd, off, SEEK_SET) != off || read(fd, &frame, 8) != 8) {
+  // /proc/self/pagemap is available in kernel >= 2.6.25
+  if (fd < 0)
+    return 0;
+
+  if (lseek64(fd, off, SEEK_SET) != off || read(fd, &frame, 8) != 8) {
     int err = errno;
     string errtxt = ErrorString(err);
-    logprintf(0, "Error: failed to access %s with errno %d (%s)\n",
+    logprintf(0, "Process Error: failed to access %s with errno %d (%s)\n",
               kPagemapPath, err, errtxt.c_str());
     if (fd >= 0)
       close(fd);
@@ -257,12 +261,31 @@ bool OsLayer::AdlerMemcpyWarm(uint64 *dstmem, uint64 *srcmem,
 }
 
 
-// Translate user virtual to physical address.
+// Translate physical address to memory module name.
+// Assumes simple round-robin interleaving between memory channels of
+// 'interleave_size_' sized chunks, with repeated 'channel_width_'
+// blocks with bits distributed from each chip in that channel.
 int OsLayer::FindDimm(uint64 addr, char *buf, int len) {
-  char tmpbuf[256];
-  snprintf(tmpbuf, sizeof(tmpbuf), "DIMM Unknown");
-  snprintf(buf, len, "%s", tmpbuf);
-  return 0;
+  static const string unknown = "DIMM Unknown";
+  if (!modules_) {
+    snprintf(buf, len, "%s", unknown.c_str());
+    return 0;
+  }
+
+  // Find channel by counting interleave units (typically cachelines),
+  // and mod by number of channels.
+  vector<string>& channel = (*modules_)[
+      (addr / interleave_size_) % modules_->size()];
+
+  // Find dram chip by finding which byte within the channel
+  // by address mod channel width, then divide the channel
+  // evenly among the listed dram chips. Note, this will not work
+  // with x4 dram.
+  int chip = (addr % (channel_width_ / 8)) /
+             ((channel_width_ / 8) / channel.size());
+  string name = channel[chip];
+  snprintf(buf, len, "%s", name.c_str());
+  return 1;
 }
 
 
