@@ -488,13 +488,13 @@ bool Sat::InitializePages() {
   for (int64 i = 0; i < pages_; i++) {
     struct page_entry pe;
     // Only get valid pages with uninitialized tags here.
-    char buf[256];
     if (GetValid(&pe, kInvalidTag)) {
       int64 paddr = os_->VirtualToPhysical(pe.addr);
       int32 region = os_->FindRegion(paddr);
 
-      os_->FindDimm(paddr, buf, sizeof(buf));
       if (i < 256) {
+        char buf[256];
+        os_->FindDimm(paddr, buf, sizeof(buf));
         logprintf(12, "Log: address: %#llx, %s\n", paddr, buf);
       }
       region_[region]++;
@@ -572,6 +572,13 @@ bool Sat::Initialize() {
 
   if (min_hugepages_mbytes_ > 0)
     os_->SetMinimumHugepagesSize(min_hugepages_mbytes_ * kMegabyte);
+  if (modules_.size() > 0) {
+    logprintf(6, "Log: Decoding memory: %dx%d bit channels,"
+        " %d byte burst size, %d modules per channel (x%d)\n",
+        modules_.size(), channel_width_, interleave_size_, modules_[0].size(),
+        channel_width_/modules_[0].size());
+    os_->SetDramMappingParams(interleave_size_, channel_width_, &modules_);
+  }
 
   if (!os_->Initialize()) {
     logprintf(0, "Process Error: Failed to initialize OS layer\n");
@@ -643,6 +650,8 @@ Sat::Sat() {
   min_hugepages_mbytes_ = 0;
   freepages_ = 0;
   paddr_base_ = 0;
+  interleave_size_ = kCacheLineSize;
+  channel_width_ = 64;
 
   user_break_ = false;
   verbosity_ = 8;
@@ -918,6 +927,23 @@ bool Sat::ParseArgs(int argc, char **argv) {
       continue;
     }
 
+    ARG_IVALUE("--interleave_size", interleave_size_);
+    ARG_IVALUE("--channel_width", channel_width_);
+
+    if (!strcmp(argv[i], "--memory_channel")) {
+      i++;
+      if (i < argc) {
+        char *module = argv[i];
+        modules_.push_back(vector<string>());
+        while (char* next = strchr(module, ',')) {
+          modules_.back().push_back(string(module, next - module));
+          module = next + 1;
+        }
+        modules_.back().push_back(string(module));
+      }
+      continue;
+    }
+
     // Default:
     PrintVersion();
     PrintHelp();
@@ -962,6 +988,44 @@ bool Sat::ParseArgs(int argc, char **argv) {
     if (disk_pages_ == 0)
       disk_pages_ = 1;
   }
+
+  // Validate memory channel parameters if supplied
+  if (modules_.size()) {
+    if (interleave_size_ <= 0 ||
+        interleave_size_ & (interleave_size_ - 1)) {
+      logprintf(6, "Process Error: "
+          "Interleave size %d is not a power of 2.\n", interleave_size_);
+      bad_status();
+      return false;
+    }
+    for (uint i = 0; i < modules_.size(); i++)
+      if (modules_[i].size() != modules_[0].size()) {
+        logprintf(6, "Process Error: "
+            "Channels 0 and %d have a different amount of modules.\n",i);
+        bad_status();
+        return false;
+      }
+    if (modules_[0].size() & (modules_[0].size() - 1)) {
+      logprintf(6, "Process Error: "
+          "Amount of modules per memory channel is not a power of 2.\n");
+      bad_status();
+      return false;
+    }
+    if (channel_width_ < 16
+        || channel_width_ & (channel_width_ - 1)) {
+      logprintf(6, "Process Error: "
+          "Channel width %d is invalid.\n", channel_width_);
+      bad_status();
+      return false;
+    }
+    if (channel_width_ / modules_[0].size() < 8) {
+      logprintf(6, "Process Error: "
+          "Chip width x%d must be x8 or greater.\n", channel_width_ / modules_[0].size());
+      bad_status();
+      return false;
+    }
+  }
+
 
   // Print each argument.
   for (int i = 0; i < argc; i++) {
@@ -1027,10 +1091,16 @@ void Sat::PrintHelp() {
          " --paddr_base     allocate memory starting from this address\n"
          " --pause_delay    delay (in seconds) between power spikes\n"
          " --pause_duration duration (in seconds) of each pause\n"
-         " --local_numa : choose memory regions associated with "
+         " --local_numa     choose memory regions associated with "
          "each CPU to be tested by that CPU\n"
-         " --remote_numa : choose memory regions not associated with "
-         "each CPU to be tested by that CPU\n");
+         " --remote_numa    choose memory regions not associated with "
+         "each CPU to be tested by that CPU\n"
+         " --interleave_size bytes  size in bytes of each channel's data as interleaved "
+         "between memory channels\n"
+         " --channel_width bits     width in bits of each memory channel\n"
+         " --memory_channel u1,u2   defines a comma-separated list of names\n"
+         "                          for dram packages in a memory channel.\n"
+         "                          Use multiple times to define multiple channels.\n");
 }
 
 bool Sat::CheckGoogleSpecificArgs(int argc, char **argv, int *i) {
