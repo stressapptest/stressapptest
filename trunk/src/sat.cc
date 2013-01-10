@@ -572,12 +572,12 @@ bool Sat::Initialize() {
 
   if (min_hugepages_mbytes_ > 0)
     os_->SetMinimumHugepagesSize(min_hugepages_mbytes_ * kMegabyte);
-  if (modules_.size() > 0) {
+  if (channels_.size() > 0) {
     logprintf(6, "Log: Decoding memory: %dx%d bit channels,"
-        " %d byte burst size, %d modules per channel (x%d)\n",
-        modules_.size(), channel_width_, interleave_size_, modules_[0].size(),
-        channel_width_/modules_[0].size());
-    os_->SetDramMappingParams(interleave_size_, channel_width_, &modules_);
+        "%d modules per channel (x%d), decoding hash 0x%x\n",
+        channels_.size(), channel_width_, channels_[0].size(),
+        channel_width_/channels_[0].size(), channel_hash_);
+    os_->SetDramMappingParams(channel_hash_, channel_width_, &channels_);
   }
 
   if (!os_->Initialize()) {
@@ -650,7 +650,7 @@ Sat::Sat() {
   min_hugepages_mbytes_ = 0;
   freepages_ = 0;
   paddr_base_ = 0;
-  interleave_size_ = kCacheLineSize;
+  channel_hash_ = kCacheLineSize;
   channel_width_ = 64;
 
   user_break_ = false;
@@ -927,19 +927,19 @@ bool Sat::ParseArgs(int argc, char **argv) {
       continue;
     }
 
-    ARG_IVALUE("--interleave_size", interleave_size_);
+    ARG_IVALUE("--channel_hash", channel_hash_);
     ARG_IVALUE("--channel_width", channel_width_);
 
     if (!strcmp(argv[i], "--memory_channel")) {
       i++;
       if (i < argc) {
-        char *module = argv[i];
-        modules_.push_back(vector<string>());
-        while (char* next = strchr(module, ',')) {
-          modules_.back().push_back(string(module, next - module));
-          module = next + 1;
+        char *channel = argv[i];
+        channels_.push_back(vector<string>());
+        while (char* next = strchr(channel, ',')) {
+          channels_.back().push_back(string(channel, next - channel));
+          channel = next + 1;
         }
-        modules_.back().push_back(string(module));
+        channels_.back().push_back(string(channel));
       }
       continue;
     }
@@ -990,22 +990,25 @@ bool Sat::ParseArgs(int argc, char **argv) {
   }
 
   // Validate memory channel parameters if supplied
-  if (modules_.size()) {
-    if (interleave_size_ <= 0 ||
-        interleave_size_ & (interleave_size_ - 1)) {
+  if (channels_.size()) {
+    if (channels_.size() == 1) {
+      channel_hash_ = 0;
+      logprintf(7, "Log: "
+          "Only one memory channel...deactivating interleave decoding.\n");
+    } else if (channels_.size() > 2) {
       logprintf(6, "Process Error: "
-          "Interleave size %d is not a power of 2.\n", interleave_size_);
+          "Triple-channel mode not yet supported... sorry.\n");
       bad_status();
       return false;
     }
-    for (uint i = 0; i < modules_.size(); i++)
-      if (modules_[i].size() != modules_[0].size()) {
+    for (uint i = 0; i < channels_.size(); i++)
+      if (channels_[i].size() != channels_[0].size()) {
         logprintf(6, "Process Error: "
-            "Channels 0 and %d have a different amount of modules.\n",i);
+            "Channels 0 and %d have a different count of dram modules.\n",i);
         bad_status();
         return false;
       }
-    if (modules_[0].size() & (modules_[0].size() - 1)) {
+    if (channels_[0].size() & (channels_[0].size() - 1)) {
       logprintf(6, "Process Error: "
           "Amount of modules per memory channel is not a power of 2.\n");
       bad_status();
@@ -1018,9 +1021,9 @@ bool Sat::ParseArgs(int argc, char **argv) {
       bad_status();
       return false;
     }
-    if (channel_width_ / modules_[0].size() < 8) {
-      logprintf(6, "Process Error: "
-          "Chip width x%d must be x8 or greater.\n", channel_width_ / modules_[0].size());
+    if (channel_width_ / channels_[0].size() < 8) {
+      logprintf(6, "Process Error: Chip width x%d must be x8 or greater.\n",
+          channel_width_ / channels_[0].size());
       bad_status();
       return false;
     }
@@ -1095,8 +1098,8 @@ void Sat::PrintHelp() {
          "each CPU to be tested by that CPU\n"
          " --remote_numa    choose memory regions not associated with "
          "each CPU to be tested by that CPU\n"
-         " --interleave_size bytes  size in bytes of each channel's data as interleaved "
-         "between memory channels\n"
+         " --channel_hash   mask of address bits XORed to determine channel.\n"
+         "                  Mask 0x40 interleaves cachelines between channels\n"
          " --channel_width bits     width in bits of each memory channel\n"
          " --memory_channel u1,u2   defines a comma-separated list of names\n"
          "                          for dram packages in a memory channel.\n"
