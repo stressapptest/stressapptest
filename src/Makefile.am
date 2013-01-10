@@ -1,4 +1,5 @@
 bin_PROGRAMS = stressapptest
+noinst_PROGRAMS = findmask
 
 AM_DEFAULT_SOURCE_EXT=.cc
 
@@ -29,3 +30,4 @@ HFILES += adler32memcpy.h
 HFILES += logger.h
 
 stressapptest_SOURCES = $(MAINFILES) $(CFILES) $(HFILES)
+findmask_SOURCES = findmask.c findmask.inc

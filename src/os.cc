@@ -261,21 +261,22 @@ bool OsLayer::AdlerMemcpyWarm(uint64 *dstmem, uint64 *srcmem,
 }
 
 
-// Translate physical address to memory module name.
-// Assumes simple round-robin interleaving between memory channels of
-// 'interleave_size_' sized chunks, with repeated 'channel_width_'
+// Translate physical address to memory module/chip name.
+// Assumes interleaving between two memory channels based on the XOR of
+// all address bits in the 'channel_hash' mask, with repeated 'channel_width_'
 // blocks with bits distributed from each chip in that channel.
 int OsLayer::FindDimm(uint64 addr, char *buf, int len) {
   static const string unknown = "DIMM Unknown";
-  if (!modules_) {
+  if (!channels_) {
     snprintf(buf, len, "%s", unknown.c_str());
     return 0;
   }
 
-  // Find channel by counting interleave units (typically cachelines),
-  // and mod by number of channels.
-  vector<string>& channel = (*modules_)[
-      (addr / interleave_size_) % modules_->size()];
+  // Find channel by XORing address bits in channel_hash mask.
+  uint32 low = (uint32)(addr & channel_hash_);
+  uint32 high = (uint32)((addr & channel_hash_) >> 32);
+  vector<string>& channel = (*channels_)[
+      __builtin_parity(high) ^ __builtin_parity(low)];
 
   // Find dram chip by finding which byte within the channel
   // by address mod channel width, then divide the channel

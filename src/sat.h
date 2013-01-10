@@ -151,9 +151,8 @@ class Sat {
   int64 freepages_;                   // How many invalid pages we need.
   int disk_pages_;                    // Number of pages per temp file.
   uint64 paddr_base_;                 // Physical address base.
-  vector< vector<string> > modules_;  // Memory module names per channel.
-  int interleave_size_;               // Channel interleaving   chunk size in bytes.
-                                      // Usually cacheline sized.
+  vector< vector<string> > channels_; // Memory module names per channel.
+  uint64 channel_hash_;               // Mask of address bits XORed for channel.
   int channel_width_;                 // Channel width in bits.
 
   // Control flags.
