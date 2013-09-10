@@ -28,6 +28,7 @@ HFILES += error_diag.h
 HFILES += disk_blocks.h
 HFILES += adler32memcpy.h
 HFILES += logger.h
+HFILES += clock.h
 
 stressapptest_SOURCES = $(MAINFILES) $(CFILES) $(HFILES)
 findmask_SOURCES = findmask.c findmask.inc

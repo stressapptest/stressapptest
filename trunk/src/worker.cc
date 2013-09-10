@@ -78,31 +78,6 @@ _syscall3(int, sched_setaffinity, pid_t, pid,
 #endif
 
 namespace {
-  // Get HW core ID from cpuid instruction.
-  inline int apicid(void) {
-    int cpu;
-#if defined(STRESSAPPTEST_CPU_X86_64) || defined(STRESSAPPTEST_CPU_I686)
-    __asm__ __volatile__ (
-# if defined(STRESSAPPTEST_CPU_I686) && defined(__PIC__)
-        "xchg %%ebx, %%esi;"
-        "cpuid;"
-        "xchg %%esi, %%ebx;"
-        : "=S" (cpu)
-# else
-        "cpuid;"
-        : "=b" (cpu)
-# endif
-        : "a" (1) : "cx", "dx");
-#elif defined(STRESSAPPTEST_CPU_ARMV7A)
-  #warning "Unsupported CPU type ARMV7A: unable to determine core ID."
-    cpu = 0;
-#else
-  #warning "Unsupported CPU type: unable to determine core ID."
-    cpu = 0;
-#endif
-    return (cpu >> 24);
-  }
-
   // Work around the sad fact that there are two (gnu, xsi) incompatible
   // versions of strerror_r floating around google. Awesome.
   bool sat_strerror(int err, char *buf, int len) {
@@ -124,7 +99,7 @@ namespace {
   inline uint64 addr_to_tag(void *address) {
     return reinterpret_cast<uint64>(address);
   }
-}
+}  // namespace
 
 #if !defined(O_DIRECT)
 // Sometimes this isn't available.
@@ -183,10 +158,13 @@ void WorkerStatus::StopWorkers() {
     WaitOnPauseBarrier();
 }
 
-bool WorkerStatus::ContinueRunning() {
+bool WorkerStatus::ContinueRunning(bool *paused) {
   // This loop is an optimization.  We use it to immediately re-check the status
   // after resuming from a pause, instead of returning and waiting for the next
   // call to this function.
+  if (paused) {
+    *paused = false;
+  }
   for (;;) {
     switch (GetStatus()) {
       case RUN:
@@ -197,6 +175,10 @@ bool WorkerStatus::ContinueRunning() {
         WaitOnPauseBarrier();
         // Wait for ResumeWorkers() to be called.
         WaitOnPauseBarrier();
+        // Indicate that a pause occurred.
+        if (paused) {
+          *paused = true;
+        }
         break;
       case STOP:
         return false;
@@ -325,8 +307,8 @@ bool WorkerThread::InitPriority() {
     logprintf(11, "Log: Bind to %s failed.\n",
               cpuset_format(&cpu_mask_).c_str());
 
-  logprintf(11, "Log: Thread %d running on apic ID %d mask %s (%s).\n",
-            thread_num_, apicid(),
+  logprintf(11, "Log: Thread %d running on core ID %d mask %s (%s).\n",
+            thread_num_, sched_getcpu(),
             CurrentCpusFormat().c_str(),
             cpuset_format(&cpu_mask_).c_str());
 #if 0
@@ -590,7 +572,7 @@ void WorkerThread::ProcessError(struct ErrorRecord *error,
                                 const char *message) {
   char dimm_string[256] = "";
 
-  int apic_id = apicid();
+  int core_id = sched_getcpu();
 
   // Determine if this is a write or read error.
   os_->Flush(error->vaddr);
@@ -625,7 +607,7 @@ void WorkerThread::ProcessError(struct ErrorRecord *error,
               "%s: miscompare on CPU %d(0x%s) at %p(0x%llx:%s): "
               "read:0x%016llx, reread:0x%016llx expected:0x%016llx\n",
               message,
-              apic_id,
+              core_id,
               CurrentCpusFormat().c_str(),
               error->vaddr,
               error->paddr,
@@ -825,6 +807,9 @@ int WorkerThread::CheckRegion(void *addr,
       if ((state == kGoodAgain) || (state == kBad)) {
         unsigned int blockerrors = badend - badstart + 1;
         errormessage = "Block Error";
+        // It's okay for the 1st entry to be corrected multiple times,
+        // it will simply be reported twice. Once here and once below
+        // when processing the error queue.
         ProcessError(&recorded[0], 0, errormessage.c_str());
         logprintf(0, "Block Error: (%p) pattern %s instead of %s, "
                   "%d bytes from offset 0x%x to 0x%x\n",
@@ -833,8 +818,6 @@ int WorkerThread::CheckRegion(void *addr,
                   blockerrors * wordsize_,
                   offset + badstart * wordsize_,
                   offset + badend * wordsize_);
-        errorcount_ += blockerrors;
-        return blockerrors;
       }
     }
   }
@@ -850,7 +833,6 @@ int WorkerThread::CheckRegion(void *addr,
 
   if (page_error) {
     // For each word in the data region.
-    int error_recount = 0;
     for (int i = 0; i < length / wordsize_; i++) {
       uint64 actual = memblock[i];
       uint64 expected;
@@ -869,21 +851,16 @@ int WorkerThread::CheckRegion(void *addr,
 
       // If the value is incorrect, save an error record for later printing.
       if (actual != expected) {
-        if (error_recount < kErrorLimit) {
-          // We already reported these.
-          error_recount++;
-        } else {
-          // If we have overflowed the error queue, print the errors now.
-          struct ErrorRecord er;
-          er.actual = actual;
-          er.expected = expected;
-          er.vaddr = &memblock[i];
+        // If we have overflowed the error queue, print the errors now.
+        struct ErrorRecord er;
+        er.actual = actual;
+        er.expected = expected;
+        er.vaddr = &memblock[i];
 
-          // Do the error printout. This will take a long time and
-          // likely change the machine state.
-          ProcessError(&er, 12, errormessage.c_str());
-          overflowerrors++;
-        }
+        // Do the error printout. This will take a long time and
+        // likely change the machine state.
+        ProcessError(&er, 12, errormessage.c_str());
+        overflowerrors++;
       }
     }
   }
@@ -958,7 +935,7 @@ void WorkerThread::ProcessTagError(struct ErrorRecord *error,
   char tag_dimm_string[256] = "";
   bool read_error = false;
 
-  int apic_id = apicid();
+  int core_id = sched_getcpu();
 
   // Determine if this is a write or read error.
   os_->Flush(error->vaddr);
@@ -992,7 +969,7 @@ void WorkerThread::ProcessTagError(struct ErrorRecord *error,
               error->tagvaddr, error->tagpaddr,
               tag_dimm_string,
               read_error ? "read error" : "write error",
-              apic_id,
+              core_id,
               CurrentCpusFormat().c_str(),
               error->vaddr,
               error->paddr,
@@ -1110,12 +1087,18 @@ bool WorkerThread::AdlerAddrMemcpyWarm(uint64 *dstmem64,
   AdlerChecksum ignored_checksum;
   os_->AdlerMemcpyWarm(dstmem64, srcmem64, size_in_bytes, &ignored_checksum);
 
-  // Force cache flush.
-  int length = size_in_bytes / sizeof(*dstmem64);
-  for (int i = 0; i < length; i += sizeof(*dstmem64)) {
-    os_->FastFlush(dstmem64 + i);
-    os_->FastFlush(srcmem64 + i);
+  // Force cache flush of both the source and destination addresses.
+  //  length - length of block to flush in cachelines.
+  //  mem_increment - number of dstmem/srcmem values per cacheline.
+  int length = size_in_bytes / kCacheLineSize;
+  int mem_increment = kCacheLineSize / sizeof(*dstmem64);
+  OsLayer::FastFlushSync();
+  for (int i = 0; i < length; ++i) {
+    OsLayer::FastFlushHint(dstmem64 + (i * mem_increment));
+    OsLayer::FastFlushHint(srcmem64 + (i * mem_increment));
   }
+  OsLayer::FastFlushSync();
+
   // Check results.
   AdlerAddrCrcC(srcmem64, size_in_bytes, checksum, pe);
   // Patch up address tags.
@@ -1246,11 +1229,11 @@ int WorkerThread::CrcCopyPage(struct page_entry *dstpe,
                                    blocksize,
                                    currentblock * blocksize, 0);
           if (errorcount == 0) {
-            int apic_id = apicid();
+            int core_id = sched_getcpu();
             logprintf(0, "Process Error: CPU %d(0x%s) CrcCopyPage "
                          "CRC mismatch %s != %s, "
                          "but no miscompares found on second pass.\n",
-                      apic_id, CurrentCpusFormat().c_str(),
+                      core_id, CurrentCpusFormat().c_str(),
                       crc.ToHexString().c_str(),
                       expectedcrc->ToHexString().c_str());
             struct ErrorRecord er;
@@ -1390,11 +1373,11 @@ int WorkerThread::CrcWarmCopyPage(struct page_entry *dstpe,
                                    blocksize,
                                    currentblock * blocksize, 0);
           if (errorcount == 0) {
-            int apic_id = apicid();
+            int core_id = sched_getcpu();
             logprintf(0, "Process Error: CPU %d(0x%s) CrciWarmCopyPage "
                          "CRC mismatch %s != %s, "
                          "but no miscompares found on second pass.\n",
-                      apic_id, CurrentCpusFormat().c_str(),
+                      core_id, CurrentCpusFormat().c_str(),
                       crc.ToHexString().c_str(),
                       expectedcrc->ToHexString().c_str());
             struct ErrorRecord er;
@@ -1610,12 +1593,11 @@ void FileThread::SetFile(const char *filename_init) {
 
 // Open the file for access.
 bool FileThread::OpenFile(int *pfile) {
-  bool no_O_DIRECT = false;
   int flags = O_RDWR | O_CREAT | O_SYNC;
   int fd = open(filename_.c_str(), flags | O_DIRECT, 0644);
   if (O_DIRECT != 0 && fd < 0 && errno == EINVAL) {
-    no_O_DIRECT = true;
-    fd = open(filename_.c_str(), flags, 0644); // Try without O_DIRECT
+    fd = open(filename_.c_str(), flags, 0644);  // Try without O_DIRECT
+    os_->ActivateFlushPageCache();  // Not using O_DIRECT fixed EINVAL
   }
   if (fd < 0) {
     logprintf(0, "Process Error: Failed to create file %s!!\n",
@@ -1623,8 +1605,6 @@ bool FileThread::OpenFile(int *pfile) {
     pages_copied_ = 0;
     return false;
   }
-  if (no_O_DIRECT)
-    os_->ActivateFlushPageCache(); // Not using O_DIRECT fixed EINVAL
   *pfile = fd;
   return true;
 }
@@ -1695,7 +1675,7 @@ bool FileThread::WritePages(int fd) {
     if (!result)
       return false;
   }
-  return os_->FlushPageCache(); // If O_DIRECT worked, this will be a NOP.
+  return os_->FlushPageCache();  // If O_DIRECT worked, this will be a NOP.
 }
 
 // Copy data from file into memory block.
@@ -2475,11 +2455,20 @@ bool CpuStressThread::Work() {
 CpuCacheCoherencyThread::CpuCacheCoherencyThread(cc_cacheline_data *data,
                                                  int cacheline_count,
                                                  int thread_num,
+                                                 int thread_count,
                                                  int inc_count) {
   cc_cacheline_data_ = data;
   cc_cacheline_count_ = cacheline_count;
   cc_thread_num_ = thread_num;
+  cc_thread_count_ = thread_count;
   cc_inc_count_ = inc_count;
+}
+
+// A very simple psuedorandom generator.  Since the random number is based
+// on only a few simple logic operations, it can be done quickly in registers
+// and the compiler can inline it.
+uint64 CpuCacheCoherencyThread::SimpleRandom(uint64 seed) {
+  return (seed >> 1) ^ (-(seed & 1) & kRandomPolynomial);
 }
 
 // Worked thread to test the cache coherency of the CPUs
@@ -2490,7 +2479,19 @@ bool CpuCacheCoherencyThread::Work() {
   uint64 time_start, time_end;
   struct timeval tv;
 
+  // Use a slightly more robust random number for the initial
+  // value, so the random sequences from the simple generator will
+  // be more divergent.
+#ifdef HAVE_RAND_R
   unsigned int seed = static_cast<unsigned int>(gettid());
+  uint64 r = static_cast<uint64>(rand_r(&seed));
+  r |= static_cast<uint64>(rand_r(&seed)) << 32;
+#else
+  srand(time(NULL));
+  uint64 r = static_cast<uint64>(rand());  // NOLINT
+  r |= static_cast<uint64>(rand()) << 32;  // NOLINT
+#endif
+
   gettimeofday(&tv, NULL);  // Get the timestamp before increments.
   time_start = tv.tv_sec * 1000000ULL + tv.tv_usec;
 
@@ -2500,14 +2501,19 @@ bool CpuCacheCoherencyThread::Work() {
       // Choose a datastructure in random and increment the appropriate
       // member in that according to the offset (which is the same as the
       // thread number.
-#ifdef HAVE_RAND_R
-      int r = rand_r(&seed);
-#else
-      int r = rand();
-#endif
-      r = cc_cacheline_count_ * (r / (RAND_MAX + 1.0));
+      r = SimpleRandom(r);
+      int cline_num = r % cc_cacheline_count_;
+      int offset;
+      // Reverse the order for odd numbered threads in odd numbered cache
+      // lines.  This is designed for massively multi-core systems where the
+      // number of cores exceeds the bytes in a cache line, so "distant" cores
+      // get a chance to exercize cache coherency between them.
+      if (cline_num & cc_thread_num_ & 1)
+        offset = (cc_thread_count_ & ~1) - cc_thread_num_;
+      else
+        offset = cc_thread_num_;
       // Increment the member of the randomely selected structure.
-      (cc_cacheline_data_[r].num[cc_thread_num_])++;
+      (cc_cacheline_data_[cline_num].num[offset])++;
     }
 
     total_inc += cc_inc_count_;
@@ -2516,14 +2522,26 @@ bool CpuCacheCoherencyThread::Work() {
     // in all the cache line structures for this particular thread.
     int cc_global_num = 0;
     for (int cline_num = 0; cline_num < cc_cacheline_count_; cline_num++) {
-      cc_global_num += cc_cacheline_data_[cline_num].num[cc_thread_num_];
+      int offset;
+      // Perform the same offset calculation from above.
+      if (cline_num & cc_thread_num_ & 1)
+        offset = (cc_thread_count_ & ~1) - cc_thread_num_;
+      else
+        offset = cc_thread_num_;
+      cc_global_num += cc_cacheline_data_[cline_num].num[offset];
       // Reset the cachline member's value for the next run.
-      cc_cacheline_data_[cline_num].num[cc_thread_num_] = 0;
+      cc_cacheline_data_[cline_num].num[offset] = 0;
     }
     if (sat_->error_injection())
       cc_global_num = -1;
 
-    if (cc_global_num != cc_inc_count_) {
+    // Since the count is only stored in a byte, to squeeze more into a
+    // single cache line, only compare it as a byte.  In the event that there
+    // is something detected, the chance that it would be missed by a single
+    // thread is 1 in 256.  If it affects all cores, that makes the chance
+    // of it being missed terribly minute.  It seems unlikely any failure
+    // case would be off by more than a small number.
+    if ((cc_global_num & 0xff) != (cc_inc_count_ & 0xff)) {
       errorcount_++;
       logprintf(0, "Hardware Error: global(%d) and local(%d) do not match\n",
                 cc_global_num, cc_inc_count_);
@@ -2707,20 +2725,17 @@ bool DiskThread::SetParameters(int read_block_size,
 
 // Open a device, return false on failure.
 bool DiskThread::OpenDevice(int *pfile) {
-  bool no_O_DIRECT = false;
   int flags = O_RDWR | O_SYNC | O_LARGEFILE;
   int fd = open(device_name_.c_str(), flags | O_DIRECT, 0);
   if (O_DIRECT != 0 && fd < 0 && errno == EINVAL) {
-    no_O_DIRECT = true;
-    fd = open(device_name_.c_str(), flags, 0); // Try without O_DIRECT
+    fd = open(device_name_.c_str(), flags, 0);  // Try without O_DIRECT
+    os_->ActivateFlushPageCache();
   }
   if (fd < 0) {
     logprintf(0, "Process Error: Failed to open device %s (thread %d)!!\n",
               device_name_.c_str(), thread_num_);
     return false;
   }
-  if (no_O_DIRECT)
-    os_->ActivateFlushPageCache();
   *pfile = fd;
 
   return GetDiskSize(fd);
@@ -2876,11 +2891,11 @@ bool DiskThread::DoWork(int fd) {
 
       // Block is either initialized by writing, or in nondestructive case,
       // initialized by being added into the datastructure for later reading.
-      block->SetBlockAsInitialized();
+      block->initialized();
 
       in_flight_sectors_.push(block);
     }
-    if (!os_->FlushPageCache()) // If O_DIRECT worked, this will be a NOP.
+    if (!os_->FlushPageCache())  // If O_DIRECT worked, this will be a NOP.
       return false;
 
     // Verify blocks on disk.
@@ -2989,8 +3004,9 @@ bool DiskThread::AsyncDiskIO(IoOp op, int fd, void *buf, int64 size,
     errorcount_++;
     os_->ErrorReport(device_name_.c_str(), operations[op].error_str, 1);
 
-    if (event.res < 0) {
-      switch (event.res) {
+    int64 result = static_cast<int64>(event.res);
+    if (result < 0) {
+      switch (result) {
         case -EIO:
           logprintf(0, "Hardware Error: Low-level I/O error while doing %s to "
                        "sectors starting at %lld on disk %s (thread %d).\n",
@@ -3013,7 +3029,7 @@ bool DiskThread::AsyncDiskIO(IoOp op, int fd, void *buf, int64 size,
   }
 
   return true;
-#else // !HAVE_LIBAIO_H
+#else  // !HAVE_LIBAIO_H
   return false;
 #endif
 }
@@ -3021,7 +3037,7 @@ bool DiskThread::AsyncDiskIO(IoOp op, int fd, void *buf, int64 size,
 // Write a block to disk.
 // Return false if the block is not written.
 bool DiskThread::WriteBlockToDisk(int fd, BlockData *block) {
-  memset(block_buffer_, 0, block->GetSize());
+  memset(block_buffer_, 0, block->size());
 
   // Fill block buffer with a pattern
   struct page_entry pe;
@@ -3029,30 +3045,30 @@ bool DiskThread::WriteBlockToDisk(int fd, BlockData *block) {
     // Even though a valid page could not be obatined, it is not an error
     // since we can always fill in a pattern directly, albeit slower.
     unsigned int *memblock = static_cast<unsigned int *>(block_buffer_);
-    block->SetPattern(patternlist_->GetRandomPattern());
+    block->set_pattern(patternlist_->GetRandomPattern());
 
     logprintf(11, "Log: Warning, using pattern fill fallback in "
                   "DiskThread::WriteBlockToDisk on disk %s (thread %d).\n",
               device_name_.c_str(), thread_num_);
 
-    for (int i = 0; i < block->GetSize()/wordsize_; i++) {
-      memblock[i] = block->GetPattern()->pattern(i);
+    for (unsigned int i = 0; i < block->size()/wordsize_; i++) {
+      memblock[i] = block->pattern()->pattern(i);
     }
   } else {
-    memcpy(block_buffer_, pe.addr, block->GetSize());
-    block->SetPattern(pe.pattern);
+    memcpy(block_buffer_, pe.addr, block->size());
+    block->set_pattern(pe.pattern);
     sat_->PutValid(&pe);
   }
 
   logprintf(12, "Log: Writing %lld sectors starting at %lld on disk %s"
             " (thread %d).\n",
-            block->GetSize()/kSectorSize, block->GetAddress(),
+            block->size()/kSectorSize, block->address(),
             device_name_.c_str(), thread_num_);
 
   int64 start_time = GetTime();
 
-  if (!AsyncDiskIO(ASYNC_IO_WRITE, fd, block_buffer_, block->GetSize(),
-                   block->GetAddress() * kSectorSize, write_timeout_)) {
+  if (!AsyncDiskIO(ASYNC_IO_WRITE, fd, block_buffer_, block->size(),
+                   block->address() * kSectorSize, write_timeout_)) {
     return false;
   }
 
@@ -3073,11 +3089,11 @@ bool DiskThread::WriteBlockToDisk(int fd, BlockData *block) {
 // Return true if the block was read, also increment errorcount
 // if the block had data errors or performance problems.
 bool DiskThread::ValidateBlockOnDisk(int fd, BlockData *block) {
-  int64 blocks = block->GetSize() / read_block_size_;
+  int64 blocks = block->size() / read_block_size_;
   int64 bytes_read = 0;
   int64 current_blocks;
   int64 current_bytes;
-  uint64 address = block->GetAddress();
+  uint64 address = block->address();
 
   logprintf(20, "Log: Reading sectors starting at %lld on disk %s "
             "(thread %d).\n",
@@ -3129,7 +3145,7 @@ bool DiskThread::ValidateBlockOnDisk(int fd, BlockData *block) {
     // In non-destructive mode, don't compare the block to the pattern since
     // the block was never written to disk in the first place.
     if (!non_destructive_) {
-      if (CheckRegion(block_buffer_, block->GetPattern(), current_bytes,
+      if (CheckRegion(block_buffer_, block->pattern(), current_bytes,
                       0, bytes_read)) {
         os_->ErrorReport(device_name_.c_str(), "disk-pattern-error", 1);
         errorcount_ += 1;
@@ -3166,7 +3182,7 @@ bool DiskThread::Work() {
   // when using direct IO.
 #ifdef HAVE_POSIX_MEMALIGN
   int memalign_result = posix_memalign(&block_buffer_, kBufferAlignment,
-                              sat_->page_length());
+                                       sat_->page_length());
 #else
   block_buffer_ = memalign(kBufferAlignment, sat_->page_length());
   int memalign_result = (block_buffer_ == 0);
@@ -3409,4 +3425,225 @@ bool MemoryRegionThread::Work() {
   logprintf(9, "Log: Completed %d: Memory Region thread. Status %d, %d "
             "pages checked\n", thread_num_, status_, pages_copied_);
   return result;
+}
+
+// The list of MSRs to read from each cpu.
+const CpuFreqThread::CpuRegisterType CpuFreqThread::kCpuRegisters[] = {
+  { kMsrTscAddr, "TSC" },
+  { kMsrAperfAddr, "APERF" },
+  { kMsrMperfAddr, "MPERF" },
+};
+
+CpuFreqThread::CpuFreqThread(int num_cpus, int freq_threshold, int round)
+  : num_cpus_(num_cpus),
+    freq_threshold_(freq_threshold),
+    round_(round) {
+  sat_assert(round >= 0);
+  if (round == 0) {
+    // If rounding is off, force rounding to the nearest MHz.
+    round_ = 1;
+    round_value_ = 0.5;
+  } else {
+    round_value_ = round/2.0;
+  }
+}
+
+CpuFreqThread::~CpuFreqThread() {
+}
+
+// Compute the difference between the currently read MSR values and the
+// previously read values and store the results in delta. If any of the
+// values did not increase, or the TSC value is too small, returns false.
+// Otherwise, returns true.
+bool CpuFreqThread::ComputeDelta(CpuDataType *current, CpuDataType *previous,
+                                 CpuDataType *delta) {
+  // Loop through the msrs.
+  for (int msr = 0; msr < kMsrLast; msr++) {
+    if (previous->msrs[msr] > current->msrs[msr]) {
+      logprintf(0, "Log: Register %s went backwards 0x%llx to 0x%llx "
+                "skipping interval\n", kCpuRegisters[msr], previous->msrs[msr],
+                current->msrs[msr]);
+      return false;
+    } else {
+      delta->msrs[msr] = current->msrs[msr] - previous->msrs[msr];
+    }
+  }
+
+  // Check for TSC < 1 Mcycles over interval.
+  if (delta->msrs[kMsrTsc] < (1000 * 1000)) {
+    logprintf(0, "Log: Insanely slow TSC rate, TSC stops in idle?\n");
+    return false;
+  }
+  timersub(&current->tv, &previous->tv, &delta->tv);
+
+  return true;
+}
+
+// Compute the change in values of the MSRs between current and previous,
+// set the frequency in MHz of the cpu. If there is an error computing
+// the delta, return false. Othewise, return true.
+bool CpuFreqThread::ComputeFrequency(CpuDataType *current,
+                                     CpuDataType *previous, int *freq) {
+  CpuDataType delta;
+  if (!ComputeDelta(current, previous, &delta)) {
+    return false;
+  }
+
+  double interval = delta.tv.tv_sec + delta.tv.tv_usec / 1000000.0;
+  double frequency = 1.0 * delta.msrs[kMsrTsc] / 1000000
+                     * delta.msrs[kMsrAperf] / delta.msrs[kMsrMperf] / interval;
+
+  // Use the rounding value to round up properly.
+  int computed = static_cast<int>(frequency + round_value_);
+  *freq = computed - (computed % round_);
+  return true;
+}
+
+// This is the task function that the thread executes.
+bool CpuFreqThread::Work() {
+  cpu_set_t cpuset;
+  if (!AvailableCpus(&cpuset)) {
+    logprintf(0, "Process Error: Cannot get information about the cpus.\n");
+    return false;
+  }
+
+  // Start off indicating the test is passing.
+  status_ = true;
+
+  int curr = 0;
+  int prev = 1;
+  uint32 num_intervals = 0;
+  bool paused = false;
+  bool valid;
+  bool pass = true;
+
+  vector<CpuDataType> data[2];
+  data[0].resize(num_cpus_);
+  data[1].resize(num_cpus_);
+  while (IsReadyToRun(&paused)) {
+    if (paused) {
+      // Reset the intervals and restart logic after the pause.
+      num_intervals = 0;
+    }
+    if (num_intervals == 0) {
+      // If this is the first interval, then always wait a bit before
+      // starting to collect data.
+      sat_sleep(kStartupDelay);
+    }
+
+    // Get the per cpu counters.
+    valid = true;
+    for (int cpu = 0; cpu < num_cpus_; cpu++) {
+      if (CPU_ISSET(cpu, &cpuset)) {
+        if (!GetMsrs(cpu, &data[curr][cpu])) {
+          logprintf(0, "Failed to get msrs on cpu %d.\n", cpu);
+          valid = false;
+          break;
+        }
+      }
+    }
+    if (!valid) {
+      // Reset the number of collected intervals since something bad happened.
+      num_intervals = 0;
+      continue;
+    }
+
+    num_intervals++;
+
+    // Only compute a delta when we have at least two intervals worth of data.
+    if (num_intervals > 2) {
+      for (int cpu = 0; cpu < num_cpus_; cpu++) {
+        if (CPU_ISSET(cpu, &cpuset)) {
+          int freq;
+          if (!ComputeFrequency(&data[curr][cpu], &data[prev][cpu],
+                                &freq)) {
+            // Reset the number of collected intervals since an unknown
+            // error occurred.
+            logprintf(0, "Log: Cannot get frequency of cpu %d.\n", cpu);
+            num_intervals = 0;
+            break;
+          }
+          logprintf(15, "Cpu %d Freq %d\n", cpu, freq);
+          if (freq < freq_threshold_) {
+            errorcount_++;
+            pass = false;
+            logprintf(0, "Log: Cpu %d frequency is too low, frequency %d MHz "
+                      "threshold %d MHz.\n", cpu, freq, freq_threshold_);
+          }
+        }
+      }
+    }
+
+    sat_sleep(kIntervalPause);
+
+    // Swap the values in curr and prev (these values flip between 0 and 1).
+    curr ^= 1;
+    prev ^= 1;
+  }
+
+  return pass;
+}
+
+
+// Get the MSR values for this particular cpu and save them in data. If
+// any error is encountered, returns false. Otherwise, returns true.
+bool CpuFreqThread::GetMsrs(int cpu, CpuDataType *data) {
+  for (int msr = 0; msr < kMsrLast; msr++) {
+    if (!os_->ReadMSR(cpu, kCpuRegisters[msr].msr, &data->msrs[msr])) {
+      return false;
+    }
+  }
+  // Save the time at which we acquired these values.
+  gettimeofday(&data->tv, NULL);
+
+  return true;
+}
+
+// Returns true if this test can run on the current machine. Otherwise,
+// returns false.
+bool CpuFreqThread::CanRun() {
+#if defined(STRESSAPPTEST_CPU_X86_64) || defined(STRESSAPPTEST_CPU_I686)
+  unsigned int eax, ebx, ecx, edx;
+
+  // Check that the TSC feature is supported.
+  // This check is valid for both Intel and AMD.
+  eax = 1;
+  cpuid(&eax, &ebx, &ecx, &edx);
+  if (!(edx & (1 << 5))) {
+    logprintf(0, "Process Error: No TSC support.\n");
+    return false;
+  }
+
+  // Check the highest extended function level supported.
+  // This check is valid for both Intel and AMD.
+  eax = 0x80000000;
+  cpuid(&eax, &ebx, &ecx, &edx);
+  if (eax < 0x80000007) {
+    logprintf(0, "Process Error: No invariant TSC support.\n");
+    return false;
+  }
+
+  // Non-Stop TSC is advertised by CPUID.EAX=0x80000007: EDX.bit8
+  // This check is valid for both Intel and AMD.
+  eax = 0x80000007;
+  cpuid(&eax, &ebx, &ecx, &edx);
+  if ((edx & (1 << 8)) == 0) {
+    logprintf(0, "Process Error: No non-stop TSC support.\n");
+    return false;
+  }
+
+  // APERF/MPERF is advertised by CPUID.EAX=0x6: ECX.bit0
+  // This check is valid for both Intel and AMD.
+  eax = 0x6;
+  cpuid(&eax, &ebx, &ecx, &edx);
+  if ((ecx & 1) == 0) {
+    logprintf(0, "Process Error: No APERF MSR support.\n");
+    return false;
+  }
+  return true;
+#else
+  logprintf(0, "Process Error: "
+               "cpu_freq_test is only supported on X86 processors.\n");
+  return false;
+#endif
 }

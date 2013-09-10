@@ -62,7 +62,7 @@ class Logger {
 
   // Lines with a priority numerically greater than this will not be logged.
   // May not be called while multiple threads are running.
-  void SetVerbosity(int verbosity) {
+  virtual void SetVerbosity(int verbosity) {
     verbosity_ = verbosity;
   }
 
@@ -72,15 +72,20 @@ class Logger {
   // Args:
   //   log_fd: The file descriptor to write to.  Will not be closed by this
   //           object.
-  void SetLogFd(int log_fd) {
+  virtual void SetLogFd(int log_fd) {
     LOGGER_ASSERT(log_fd >= 0);
     log_fd_ = log_fd;
   }
 
   // Set output to be written to stdout only.  This is the default mode.  May
   // not be called while multiple threads are running.
-  void SetStdoutOnly() {
+  virtual void SetStdoutOnly() {
     log_fd_ = -1;
+  }
+
+  // Enable or disable logging of timestamps.
+  void SetTimestampLogging(bool log_ts_enabled) {
+    log_timestamps_ = log_ts_enabled;
   }
 
   // Logs a line, with a vprintf(3)-like interface.  This will block on writing
@@ -104,11 +109,12 @@ class Logger {
   // before this returns.  Waits for the thread to finish before returning.
   void StopThread();
 
- private:
+ protected:
   Logger();
 
-  ~Logger();
+  virtual ~Logger();
 
+ private:
   // Args:
   //   line: Must be non-NULL.  This function takes ownership of it.
   void QueueLogLine(string *line);
@@ -127,6 +133,7 @@ class Logger {
   int verbosity_;
   int log_fd_;
   bool thread_running_;
+  bool log_timestamps_;
   vector<string*> queued_lines_;
   // This doubles as a mutex for log_fd_ when the logging thread is not running.
   pthread_mutex_t queued_lines_mutex_;

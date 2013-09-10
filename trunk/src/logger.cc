@@ -17,6 +17,7 @@
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <string>
@@ -37,10 +38,20 @@ void Logger::VLogF(int priority, const char *format, va_list args) {
     return;
   }
   char buffer[4096];
-  int length = vsnprintf(buffer, sizeof buffer, format, args);
-  if (static_cast<size_t>(length) >= sizeof buffer) {
-    length = sizeof buffer;
-    buffer[sizeof buffer - 1] = '\n';
+  size_t length = 0;
+  if (log_timestamps_) {
+    time_t raw_time;
+    time(&raw_time);
+    struct tm time_struct;
+    localtime_r(&raw_time, &time_struct);
+    length = strftime(buffer, sizeof(buffer), "%Y/%m/%d-%H:%M:%S(%Z) ",
+                      &time_struct);
+    LOGGER_ASSERT(length);  // Catch if the buffer is set too small.
+  }
+  length += vsnprintf(buffer + length, sizeof(buffer) - length, format, args);
+  if (length >= sizeof(buffer)) {
+    length = sizeof(buffer);
+    buffer[sizeof(buffer) - 1] = '\n';
   }
   QueueLogLine(new string(buffer, length));
 }
@@ -52,19 +63,30 @@ void Logger::StartThread() {
 }
 
 void Logger::StopThread() {
-  LOGGER_ASSERT(thread_running_);
+  // Allow this to be called before the thread has started.
+  if (!thread_running_) {
+    return;
+  }
   thread_running_ = false;
-  LOGGER_ASSERT(0 == pthread_mutex_lock(&queued_lines_mutex_));
+  int retval = pthread_mutex_lock(&queued_lines_mutex_);
+  LOGGER_ASSERT(0 == retval);
   bool need_cond_signal = queued_lines_.empty();
   queued_lines_.push_back(NULL);
-  LOGGER_ASSERT(0 == pthread_mutex_unlock(&queued_lines_mutex_));
+  retval = pthread_mutex_unlock(&queued_lines_mutex_);
+  LOGGER_ASSERT(0 == retval);
   if (need_cond_signal) {
-    LOGGER_ASSERT(0 == pthread_cond_signal(&queued_lines_cond_));
+    retval = pthread_cond_signal(&queued_lines_cond_);
+    LOGGER_ASSERT(0 == retval);
   }
-  LOGGER_ASSERT(0 == pthread_join(thread_, NULL));
+  retval = pthread_join(thread_, NULL);
+  LOGGER_ASSERT(0 == retval);
 }
 
-Logger::Logger() : verbosity_(20), log_fd_(-1), thread_running_(false) {
+Logger::Logger()
+    : verbosity_(20),
+      log_fd_(-1),
+      thread_running_(false),
+      log_timestamps_(true) {
   LOGGER_ASSERT(0 == pthread_mutex_init(&queued_lines_mutex_, NULL));
   LOGGER_ASSERT(0 == pthread_cond_init(&queued_lines_cond_, NULL));
   LOGGER_ASSERT(0 == pthread_cond_init(&full_queue_cond_, NULL));
@@ -94,19 +116,15 @@ void Logger::QueueLogLine(string *line) {
   LOGGER_ASSERT(0 == pthread_mutex_unlock(&queued_lines_mutex_));
 }
 
-namespace {
-void WriteToFile(const string& line, int fd) {
-  LOGGER_ASSERT(write(fd, line.data(), line.size()) ==
-                static_cast<ssize_t>(line.size()));
-}
-}
-
 void Logger::WriteAndDeleteLogLine(string *line) {
   LOGGER_ASSERT(line != NULL);
+  ssize_t bytes_written;
   if (log_fd_ >= 0) {
-    WriteToFile(*line, log_fd_);
+    bytes_written = write(log_fd_, line->data(), line->size());
+    LOGGER_ASSERT(bytes_written == static_cast<ssize_t>(line->size()));
   }
-  WriteToFile(*line, 1);
+  bytes_written = write(STDOUT_FILENO, line->data(), line->size());
+  LOGGER_ASSERT(bytes_written == static_cast<ssize_t>(line->size()));
   delete line;
 }
 

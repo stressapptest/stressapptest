@@ -27,11 +27,11 @@
 
 #ifdef HAVE_CONFIG_H  // Built using autoconf
 #ifdef __ANDROID__
-#include "stressapptest_config_android.h"
+#include "stressapptest_config_android.h"  // NOLINT
 #else
-#include "stressapptest_config.h"
-using namespace __gnu_cxx;
-#endif
+#include "stressapptest_config.h"  // NOLINT
+using namespace __gnu_cxx;  //NOLINT
+#endif  // __ANDROID__
 using namespace std;
 
 typedef signed long long   int64;
@@ -57,10 +57,10 @@ inline const char* BuildChangelist() {
 }
 
 static const bool kOpenSource = true;
-#else
+#else  // !HAVE_CONFIG_H
 static const bool kOpenSource = false;
-  #include "googlesattypes.h"
-#endif
+  #include "googlesattypes.h"  // NOLINT
+#endif  // HAVE_CONFIG_H
 // Workaround to allow 32/64 bit conversion
 // without running into strict aliasing problems.
 union datacast_t {
@@ -75,11 +75,15 @@ union datacast_t {
 // File sync'd print to console and log
 void logprintf(int priority, const char *format, ...);
 
+// Stop the log and dump any queued lines.
+void logstop();
+
 // We print to stderr ourselves first in case we're in such a bad state that the
 // logger can't work.
 #define sat_assert(x) \
 {\
   if (!(x)) {\
+    logstop();\
     fprintf(stderr, "Assertion failed at %s:%d\n", __FILE__, __LINE__);\
     logprintf(0, "Assertion failed at %s:%d\n", __FILE__, __LINE__);\
     exit(1);\
@@ -183,6 +187,46 @@ inline string ErrorString(int error_num) {
     return "unknown failure";
   else
     return string(buf);
+#endif
+}
+
+// Execute the cpuid instruction and pass back the contents of the registers.
+// This only works on x86 based platforms.
+inline void cpuid(
+  unsigned int *eax, unsigned int *ebx, unsigned int *ecx, unsigned int *edx) {
+  *ebx = 0;
+  *ecx = 0;
+  *edx = 0;
+  // CPUID features documented at:
+  // http://www.sandpile.org/ia32/cpuid.htm
+#if defined(STRESSAPPTEST_CPU_I686) || defined(STRESSAPPTEST_CPU_X86_64)
+#if defined(__PIC__) && defined(STRESSAPPTEST_CPU_I686)
+  // In PIC compilations using the i686 cpu type, ebx contains the address
+  // of the global offset table. The compiler can't properly handle constraints
+  // using the ebx register for this compile, so preserve the register
+  // ourselves.
+  asm(
+    "mov %%ebx, %%edi;"
+    "cpuid;"
+    "xchg %%edi, %%ebx;"
+    // Output registers.
+    : "=a" (*eax), "=D" (*ebx), "=c" (*ecx), "=d" (*edx)
+    // Input registers.
+    : "a" (*eax)
+  );  // Asm
+#else
+  asm(
+    "cpuid;"
+    // Output registers.
+    : "=a" (*eax), "=b" (*ebx), "=c" (*ecx), "=d" (*edx)
+    // Input registers.
+    : "a" (*eax)
+  );  // Asm
+#endif  // defined(__PIC__) && defined(STRESSAPPTEST_CPU_I686)
+#elif defined(STRESSAPPTEST_CPU_PPC)
+  return;
+#else
+#warning "Unsupported CPU type."
 #endif
 }
 

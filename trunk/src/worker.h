@@ -44,7 +44,7 @@
 
 // Global Datastruture shared by the Cache Coherency Worker Threads.
 struct cc_cacheline_data {
-  int *num;
+  char *num;
 };
 
 // Typical usage:
@@ -127,10 +127,8 @@ class WorkerStatus {
   // ResumeWorkers() or StopWorkers() has been called.  Number of distinct
   // calling threads must match the worker count (see AddWorkers() and
   // RemoveSelf()).
-  bool ContinueRunning();
+  bool ContinueRunning(bool *paused);
 
-  // TODO(matthewb): Is this functionality really necessary?  Remove it if not.
-  //
   // This is a hack!  It's like ContinueRunning(), except it won't pause.  If
   // any worker threads use this exclusively in place of ContinueRunning() then
   // PauseWorkers() should never be used!
@@ -304,9 +302,10 @@ class WorkerThread {
   //   do {
   //     // work.
   //   } while (IsReadyToRun());
-  virtual bool IsReadyToRun() { return worker_status_->ContinueRunning(); }
-  // TODO(matthewb): Is this function really necessary? Remove it if not.
-  //
+  virtual bool IsReadyToRun(bool *paused = NULL) {
+    return worker_status_->ContinueRunning(paused);
+  }
+
   // Like IsReadyToRun(), except it won't pause.
   virtual bool IsReadyToRunNoPause() {
     return worker_status_->ContinueRunningNoPause();
@@ -641,16 +640,27 @@ class CpuCacheCoherencyThread : public WorkerThread {
   CpuCacheCoherencyThread(cc_cacheline_data *cc_data,
                           int cc_cacheline_count_,
                           int cc_thread_num_,
+                          int cc_thread_count_,
                           int cc_inc_count_);
   virtual bool Work();
 
  protected:
+  // Used by the simple random number generator as a shift feedback;
+  // this polynomial (x^64 + x^63 + x^61 + x^60 + 1) will produce a
+  // psuedorandom cycle of period 2^64-1.
+  static const uint64 kRandomPolynomial = 0xD800000000000000ULL;
+  // A very simple psuedorandom generator that can be inlined and use
+  // registers, to keep the CC test loop tight and focused.
+  static uint64 SimpleRandom(uint64 seed);
+
   cc_cacheline_data *cc_cacheline_data_;  // Datstructure for each cacheline.
   int cc_local_num_;        // Local counter for each thread.
   int cc_cacheline_count_;  // Number of cache lines to operate on.
   int cc_thread_num_;       // The integer id of the thread which is
                             // used as an index into the integer array
                             // of the cacheline datastructure.
+  int cc_thread_count_;     // Total number of threads being run, for
+                            // calculations mixing up cache line access.
   int cc_inc_count_;        // Number of times to increment the counter.
 
  private:
@@ -807,6 +817,82 @@ class MemoryRegionThread : public WorkerThread {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MemoryRegionThread);
+};
+
+// Worker thread to check that the frequency of every cpu does not go below a
+// certain threshold.
+class CpuFreqThread : public WorkerThread {
+ public:
+  CpuFreqThread(int num_cpus, int freq_threshold, int round);
+  ~CpuFreqThread();
+
+  // This is the task function that the thread executes.
+  virtual bool Work();
+
+  // Returns true if this test can run on the current machine. Otherwise,
+  // returns false.
+  static bool CanRun();
+
+ private:
+  static const int kIntervalPause = 10;   // The number of seconds to pause
+                                          // between acquiring the MSR data.
+  static const int kStartupDelay = 5;     // The number of seconds to wait
+                                          // before acquiring MSR data.
+  static const int kMsrTscAddr = 0x10;    // The address of the TSC MSR.
+  static const int kMsrAperfAddr = 0xE8;  // The address of the APERF MSR.
+  static const int kMsrMperfAddr = 0xE7;  // The address of the MPERF MSR.
+
+  // The index values into the CpuDataType.msr[] array.
+  enum MsrValues {
+    kMsrTsc = 0,           // MSR index 0 = TSC.
+    kMsrAperf = 1,         // MSR index 1 = APERF.
+    kMsrMperf = 2,         // MSR index 2 = MPERF.
+    kMsrLast,              // Last MSR index.
+  };
+
+  typedef struct {
+    uint32 msr;         // The address of the MSR.
+    const char *name;   // A human readable string for the MSR.
+  } CpuRegisterType;
+
+  typedef struct {
+    uint64 msrs[kMsrLast];  // The values of the MSRs.
+    struct timeval tv;      // The time at which the MSRs were read.
+  } CpuDataType;
+
+  // The set of MSR addresses and register names.
+  static const CpuRegisterType kCpuRegisters[kMsrLast];
+
+  // Compute the change in values of the MSRs between current and previous,
+  // set the frequency in MHz of the cpu. If there is an error computing
+  // the delta, return false. Othewise, return true.
+  bool ComputeFrequency(CpuDataType *current, CpuDataType *previous,
+                        int *frequency);
+
+  // Get the MSR values for this particular cpu and save them in data. If
+  // any error is encountered, returns false. Otherwise, returns true.
+  bool GetMsrs(int cpu, CpuDataType *data);
+
+  // Compute the difference between the currently read MSR values and the
+  // previously read values and store the results in delta. If any of the
+  // values did not increase, or the TSC value is too small, returns false.
+  // Otherwise, returns true.
+  bool ComputeDelta(CpuDataType *current, CpuDataType *previous,
+                    CpuDataType *delta);
+
+  // The total number of cpus on the system.
+  int num_cpus_;
+
+  // The minimum frequency that each cpu must operate at (in MHz).
+  int freq_threshold_;
+
+  // The value to round the computed frequency to.
+  int round_;
+
+  // Precomputed value to add to the frequency to do the rounding.
+  double round_value_;
+
+  DISALLOW_COPY_AND_ASSIGN(CpuFreqThread);
 };
 
 #endif  // STRESSAPPTEST_WORKER_H_
