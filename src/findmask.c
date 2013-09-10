@@ -38,6 +38,7 @@
  * current progress.
  */
 
+#include <inttypes.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdint.h>
@@ -106,7 +107,7 @@ void* thread_func(void* arg) {
 
     if (a < NOISE) b = a;
     if (b < NOISE) {
-      printf("Found mask with just %d deviations: 0x%llx\n", b, mask);
+      printf("Found mask with just %d deviations: 0x%" PRIx64 "\n", b, mask);
       fflush(stdout);
     }
 
@@ -118,7 +119,8 @@ void* thread_func(void* arg) {
 }
 
 void signal_handler(int signum) {
-  printf("Received signal... currently evaluating mask 0x%llx!\n", lastmask);
+  printf("Received signal... currently evaluating mask 0x%" PRIx64 "!\n",
+         lastmask);
   fflush(stdout);
 }
 

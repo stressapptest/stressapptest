@@ -134,6 +134,8 @@ class Sat {
 
   // Return the number of cpus in the system.
   int CpuCount();
+  // Return the worst-case (largest) cache line size of the system.
+  int CacheLineSize();
 
   // Collect error counts from threads.
   int64 GetTotalErrorCount();
@@ -147,13 +149,15 @@ class Sat {
   int64 pages_;                       // Number of memory blocks.
   int64 size_;                        // Size of memory tested, in bytes.
   int64 size_mb_;                     // Size of memory tested, in MB.
+  int64 reserve_mb_;                  // Reserve at least this amount of memory
+                                      // for the system, in MB.
   int64 min_hugepages_mbytes_;        // Minimum hugepages size.
   int64 freepages_;                   // How many invalid pages we need.
   int disk_pages_;                    // Number of pages per temp file.
   uint64 paddr_base_;                 // Physical address base.
-  vector< vector<string> > channels_; // Memory module names per channel.
   uint64 channel_hash_;               // Mask of address bits XORed for channel.
   int channel_width_;                 // Channel width in bits.
+  vector< vector<string> > channels_;  // Memory module names per channel.
 
   // Control flags.
   volatile sig_atomic_t user_break_;  // User has signalled early exit.  Used as
@@ -172,6 +176,7 @@ class Sat {
   int use_logfile_;                   // Log to a file.
   char logfilename_[255];             // Name of file to log to.
   int logfile_;                       // File handle to log to.
+  bool log_timestamps_;               // Whether to add timestamps to log lines.
 
   // Disk thread options.
   int read_block_size_;               // Size of block to read from disk.
@@ -202,8 +207,17 @@ class Sat {
   bool cc_test_;                      // Flag to decide whether to start the
                                       // cache coherency threads.
   int cc_cacheline_count_;            // Number of cache line size structures.
+  int cc_cacheline_size_;             // Size of a cache line.
   int cc_inc_count_;                  // Number of times to increment the shared
                                       // cache lines structure members.
+
+  // Cpu Frequency Options.
+  bool cpu_freq_test_;                // Flag to decide whether to start the
+                                      // cpu frequency thread.
+  int cpu_freq_threshold_;            // The MHz threshold which will cause
+                                      // the test to fail.
+  int cpu_freq_round_;                // Round the computed frequency to this
+                                      // value.
 
   // Thread control.
   int file_threads_;                  // Threads of file IO.
@@ -252,7 +266,8 @@ class Sat {
     kRandomDiskType = 7,
     kCPUType = 8,
     kErrorType = 9,
-    kCCType = 10
+    kCCType = 10,
+    kCPUFreqType = 11,
   };
 
   // Helper functions.

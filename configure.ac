@@ -5,10 +5,10 @@ AC_ARG_WITH(static, [  --with-static            enable static linking])
 
 if test "$with_static" == "yes"
 then
-	AC_MSG_NOTICE([Compiling with staticaly linked libraries.])
-	LIBS="$LIBS -static"
+  AC_MSG_NOTICE([Compiling with staticaly linked libraries.])
+  LIBS="$LIBS -static"
 else
-	AC_MSG_NOTICE([Compiling with dynamically linked libraries.])
+  AC_MSG_NOTICE([Compiling with dynamically linked libraries.])
 fi
 
 AC_CANONICAL_HOST

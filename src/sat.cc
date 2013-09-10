@@ -125,6 +125,26 @@ bool Sat::CheckEnvironment() {
   #error Build system regression - COPTS disregarded.
 #endif
 
+  // Check if the cpu frequency test is enabled and able to run.
+  if (cpu_freq_test_) {
+    if (!CpuFreqThread::CanRun()) {
+      logprintf(0, "Process Error: This platform does not support this "
+                "test.\n");
+      bad_status();
+      return false;
+    } else if (cpu_freq_threshold_ <= 0) {
+      logprintf(0, "Process Error: The cpu frequency test requires "
+                "--cpu_freq_threshold set to a value > 0\n");
+      bad_status();
+      return false;
+    } else if (cpu_freq_round_ < 0) {
+      logprintf(0, "Process Error: The --cpu_freq_round option must be greater"
+                " than or equal to zero. A value of zero means no rounding.\n");
+      bad_status();
+      return false;
+    }
+  }
+
   // Use all CPUs if nothing is specified.
   if (memory_threads_ == -1) {
     memory_threads_ = os_->num_cpus();
@@ -491,12 +511,6 @@ bool Sat::InitializePages() {
     if (GetValid(&pe, kInvalidTag)) {
       int64 paddr = os_->VirtualToPhysical(pe.addr);
       int32 region = os_->FindRegion(paddr);
-
-      if (i < 256) {
-        char buf[256];
-        os_->FindDimm(paddr, buf, sizeof(buf));
-        logprintf(12, "Log: address: %#llx, %s\n", paddr, buf);
-      }
       region_[region]++;
       pe.paddr = paddr;
       pe.tag = 1 << region;
@@ -554,6 +568,7 @@ bool Sat::Initialize() {
   // Initializes sync'd log file to ensure output is saved.
   if (!InitializeLogfile())
     return false;
+  Logger::GlobalLogger()->SetTimestampLogging(log_timestamps_);
   Logger::GlobalLogger()->StartThread();
 
   logprintf(5, "Log: Commandline - %s\n", cmdline_.c_str());
@@ -572,6 +587,10 @@ bool Sat::Initialize() {
 
   if (min_hugepages_mbytes_ > 0)
     os_->SetMinimumHugepagesSize(min_hugepages_mbytes_ * kMegabyte);
+
+  if (reserve_mb_ > 0)
+    os_->SetReserveSize(reserve_mb_);
+
   if (channels_.size() > 0) {
     logprintf(6, "Log: Decoding memory: %dx%d bit channels,"
         "%d modules per channel (x%d), decoding hash 0x%x\n",
@@ -647,6 +666,7 @@ Sat::Sat() {
   pages_ = 0;
   size_mb_ = 0;
   size_ = size_mb_ * kMegabyte;
+  reserve_mb_ = 0;
   min_hugepages_mbytes_ = 0;
   freepages_ = 0;
   paddr_base_ = 0;
@@ -661,6 +681,7 @@ Sat::Sat() {
   run_on_anything_ = 0;
   use_logfile_ = 0;
   logfile_ = 0;
+  log_timestamps_ = true;
   // Detect 32/64 bit binary.
   void *pvoid = 0;
   address_mode_ = sizeof(pvoid) * 8;
@@ -678,8 +699,14 @@ Sat::Sat() {
   // Cache coherency data initialization.
   cc_test_ = false;         // Flag to trigger cc threads.
   cc_cacheline_count_ = 2;  // Two datastructures of cache line size.
+  cc_cacheline_size_ = 0;   // Size of a cacheline (0 for auto-detect).
   cc_inc_count_ = 1000;     // Number of times to increment the shared variable.
   cc_cacheline_data_ = 0;   // Cache Line size datastructure.
+
+  // Cpu frequency data initialization.
+  cpu_freq_test_ = false;   // Flag to trigger cpu frequency thread.
+  cpu_freq_threshold_ = 0;  // Threshold, in MHz, at which a cpu fails.
+  cpu_freq_round_ = 10;     // Round the computed frequency to this value.
 
   sat_assert(0 == pthread_mutex_init(&worker_lock_, NULL));
   file_threads_ = 0;
@@ -774,6 +801,9 @@ bool Sat::ParseArgs(int argc, char **argv) {
     // Set number of megabyte to use.
     ARG_IVALUE("-M", size_mb_);
 
+    // Specify the amount of megabytes to be reserved for system.
+    ARG_IVALUE("--reserve_memory", reserve_mb_);
+
     // Set minimum megabytes of hugepages to require.
     ARG_IVALUE("-H", min_hugepages_mbytes_);
 
@@ -795,8 +825,21 @@ bool Sat::ParseArgs(int argc, char **argv) {
     // Set number of cache line size datastructures
     ARG_IVALUE("--cc_line_count", cc_cacheline_count_);
 
+    // Override the detected or assumed cache line size.
+    ARG_IVALUE("--cc_line_size", cc_cacheline_size_);
+
     // Flag set when cache coherency tests need to be run
-    ARG_KVALUE("--cc_test", cc_test_, 1);
+    ARG_KVALUE("--cc_test", cc_test_, true);
+
+    // Set when the cpu_frequency test needs to be run
+    ARG_KVALUE("--cpu_freq_test", cpu_freq_test_, true);
+
+    // Set the threshold in MHz at which the cpu frequency test will fail.
+    ARG_IVALUE("--cpu_freq_threshold", cpu_freq_threshold_);
+
+    // Set the rounding value for the cpu frequency test. The default is to
+    // round to the nearest 10s value.
+    ARG_IVALUE("--cpu_freq_round", cpu_freq_round_);
 
     // Set number of CPU stress threads.
     ARG_IVALUE("-C", cpu_stress_threads_);
@@ -806,6 +849,9 @@ bool Sat::ParseArgs(int argc, char **argv) {
 
     // Verbosity level.
     ARG_IVALUE("-v", verbosity_);
+
+    // Turn off timestamps logging.
+    ARG_KVALUE("--no_timestamps", log_timestamps_, false);
 
     // Set maximum number of errors to collect. Stop running after this many.
     ARG_IVALUE("--max_errors", max_errorcount_);
@@ -1004,7 +1050,7 @@ bool Sat::ParseArgs(int argc, char **argv) {
     for (uint i = 0; i < channels_.size(); i++)
       if (channels_[i].size() != channels_[0].size()) {
         logprintf(6, "Process Error: "
-            "Channels 0 and %d have a different count of dram modules.\n",i);
+            "Channels 0 and %d have a different count of dram modules.\n", i);
         bad_status();
         return false;
       }
@@ -1043,6 +1089,8 @@ bool Sat::ParseArgs(int argc, char **argv) {
 void Sat::PrintHelp() {
   printf("Usage: ./sat(32|64) [options]\n"
          " -M mbytes        megabytes of ram to test\n"
+         " --reserve-memory If not using hugepages, the amount of memory to "
+         " reserve for the system\n"
          " -H mbytes        minimum megabytes of hugepages to require\n"
          " -s seconds       number of seconds to run\n"
          " -m threads       number of memory copy threads to run\n"
@@ -1054,6 +1102,7 @@ void Sat::PrintHelp() {
          " -f filename      add a disk thread with "
          "tempfile 'filename'\n"
          " -l logfile       log output to file 'logfile'\n"
+         " --no_timestamps  do not prefix timestamps to log messages\n"
          " --max_errors n   exit early after finding 'n' errors\n"
          " -v level         verbosity (0-20), default is 8\n"
          " -W               Use more CPU-stressful memory copy\n"
@@ -1091,6 +1140,13 @@ void Sat::PrintHelp() {
          "cacheline's member\n"
          " --cc_line_count  number of cache line sized datastructures "
          "to allocate for the cache coherency threads to operate\n"
+         " --cc_line_size   override the auto-detected cache line size\n"
+         " --cpu_freq_test  enable the cpu frequency test (requires the "
+         "--cpu_freq_threshold argument to be set)\n"
+         " --cpu_freq_threshold  fail the cpu frequency test if the frequency "
+         "goes below this value (specified in MHz)\n"
+         " --cpu_freq_round round the computed frequency to this value, if set"
+         " to zero, only round to the nearest MHz\n"
          " --paddr_base     allocate memory starting from this address\n"
          " --pause_delay    delay (in seconds) between power spikes\n"
          " --pause_duration duration (in seconds) of each pause\n"
@@ -1098,12 +1154,12 @@ void Sat::PrintHelp() {
          "each CPU to be tested by that CPU\n"
          " --remote_numa    choose memory regions not associated with "
          "each CPU to be tested by that CPU\n"
-         " --channel_hash   mask of address bits XORed to determine channel.\n"
-         "                  Mask 0x40 interleaves cachelines between channels\n"
+         " --channel_hash   mask of address bits XORed to determine channel. "
+         "Mask 0x40 interleaves cachelines between channels\n"
          " --channel_width bits     width in bits of each memory channel\n"
-         " --memory_channel u1,u2   defines a comma-separated list of names\n"
-         "                          for dram packages in a memory channel.\n"
-         "                          Use multiple times to define multiple channels.\n");
+         " --memory_channel u1,u2   defines a comma-separated list of names "
+         "for dram packages in a memory channel. Use multiple times to "
+         "define multiple channels.\n");
 }
 
 bool Sat::CheckGoogleSpecificArgs(int argc, char **argv, int *i) {
@@ -1348,32 +1404,45 @@ void Sat::InitializeThreads() {
            sizeof(cc_cacheline_data) * cc_cacheline_count_);
 
     int num_cpus = CpuCount();
+    char *num;
+    // Calculate the number of cache lines needed just to give each core
+    // its own counter.
+    int line_size = cc_cacheline_size_;
+    if (line_size <= 0) {
+      line_size = CacheLineSize();
+      if (line_size < kCacheLineSize)
+        line_size = kCacheLineSize;
+      logprintf(12, "Log: Using %d as cache line size\n", line_size);
+    }
+    // The number of cache lines needed to hold an array of num_cpus.
+    // "num" must be the same type as cc_cacheline_data[X].num or the memory
+    // size calculations will fail.
+    int needed_lines = (sizeof(*num) * num_cpus + line_size - 1) / line_size;
     // Allocate all the nums once so that we get a single chunk
     // of contiguous memory.
-    int *num;
 #ifdef HAVE_POSIX_MEMALIGN
     int err_result = posix_memalign(
         reinterpret_cast<void**>(&num),
-        kCacheLineSize, sizeof(*num) * num_cpus * cc_cacheline_count_);
+        line_size, line_size * needed_lines * cc_cacheline_count_);
 #else
-    num = reinterpret_cast<int*>(memalign(kCacheLineSize,
-			sizeof(*num) * num_cpus * cc_cacheline_count_));
+    num = reinterpret_cast<int*>(memalign(
+        line_size, line_size * needed_lines * cc_cacheline_count_));
     int err_result = (num == 0);
 #endif
     sat_assert(err_result == 0);
 
     int cline;
     for (cline = 0; cline < cc_cacheline_count_; cline++) {
-      memset(num, 0, sizeof(num_cpus) * num_cpus);
+      memset(num, 0, sizeof(*num) * num_cpus);
       cc_cacheline_data_[cline].num = num;
-      num += num_cpus;
+      num += (line_size * needed_lines) / sizeof(*num);
     }
 
     int tnum;
     for (tnum = 0; tnum < num_cpus; tnum++) {
       CpuCacheCoherencyThread *thread =
           new CpuCacheCoherencyThread(cc_cacheline_data_, cc_cacheline_count_,
-                                      tnum, cc_inc_count_);
+                                      tnum, num_cpus, cc_inc_count_);
       thread->InitThread(total_threads_++, this, os_, patternlist_,
                          &continuous_status_);
       // Pin the thread to a particular core.
@@ -1384,12 +1453,41 @@ void Sat::InitializeThreads() {
     }
     workers_map_.insert(make_pair(kCCType, cc_vector));
   }
+
+  if (cpu_freq_test_) {
+    // Create the frequency test thread.
+    logprintf(5, "Log: Running cpu frequency test: threshold set to %dMHz.\n",
+              cpu_freq_threshold_);
+    CpuFreqThread *thread = new CpuFreqThread(CpuCount(), cpu_freq_threshold_,
+                                              cpu_freq_round_);
+    // This thread should be paused when other threads are paused.
+    thread->InitThread(total_threads_++, this, os_, NULL,
+                       &power_spike_status_);
+
+    WorkerVector *cpu_freq_vector = new WorkerVector();
+    cpu_freq_vector->insert(cpu_freq_vector->end(), thread);
+    workers_map_.insert(make_pair(kCPUFreqType, cpu_freq_vector));
+  }
+
   ReleaseWorkerLock();
 }
 
 // Return the number of cpus actually present in the machine.
 int Sat::CpuCount() {
   return sysconf(_SC_NPROCESSORS_CONF);
+}
+
+// Return the worst case (largest) cache line size of the various levels of
+// cache actually prsent in the machine.
+int Sat::CacheLineSize() {
+  int max_linesize = sysconf(_SC_LEVEL1_DCACHE_LINESIZE);
+  int linesize = sysconf(_SC_LEVEL2_CACHE_LINESIZE);
+  if (linesize > max_linesize) max_linesize = linesize;
+  linesize = sysconf(_SC_LEVEL3_CACHE_LINESIZE);
+  if (linesize > max_linesize) max_linesize = linesize;
+  linesize = sysconf(_SC_LEVEL4_CACHE_LINESIZE);
+  if (linesize > max_linesize) max_linesize = linesize;
+  return max_linesize;
 }
 
 // Notify and reap worker threads.
@@ -1974,3 +2072,9 @@ void logprintf(int priority, const char *format, ...) {
   Logger::GlobalLogger()->VLogF(priority, format, args);
   va_end(args);
 }
+
+// Stop the logging thread and verify any pending data is written to the log.
+void logstop() {
+  Logger::GlobalLogger()->StopThread();
+}
+
