@@ -79,7 +79,7 @@ OsLayer::OsLayer() {
   address_mode_ = sizeof(pvoid) * 8;
 
   has_clflush_ = false;
-  has_sse2_ = false;
+  has_vector_ = false;
 
   use_flush_page_cache_ = false;
 
@@ -183,15 +183,18 @@ void OsLayer::GetFeatures() {
   unsigned int eax = 1, ebx, ecx, edx;
   cpuid(&eax, &ebx, &ecx, &edx);
   has_clflush_ = (edx >> 19) & 1;
-  has_sse2_ = (edx >> 26) & 1;
+  has_vector_ = (edx >> 26) & 1;  // SSE2 caps bit.
 
   logprintf(9, "Log: has clflush: %s, has sse2: %s\n",
             has_clflush_ ? "true" : "false",
-            has_sse2_ ? "true" : "false");
+            has_vector_ ? "true" : "false");
 #elif defined(STRESSAPPTEST_CPU_PPC)
   // All PPC implementations have cache flush instructions.
   has_clflush_ = true;
 #elif defined(STRESSAPPTEST_CPU_ARMV7A)
+  // TODO(nsanders): add detect from /proc/cpuinfo or /proc/self/auxv.
+  // For now assume neon and don't run -W if you don't have it.
+  has_vector_ = true; // NEON.
 #warning "Unsupported CPU type ARMV7A: unable to determine feature set."
 #else
 #warning "Unsupported CPU type: unable to determine feature set."
@@ -253,7 +256,7 @@ void OsLayer::Flush(void *vaddr) {
 bool OsLayer::AdlerMemcpyWarm(uint64 *dstmem, uint64 *srcmem,
                               unsigned int size_in_bytes,
                               AdlerChecksum *checksum) {
-  if (has_sse2_) {
+  if (has_vector_) {
     return AdlerMemcpyAsm(dstmem, srcmem, size_in_bytes, checksum);
   } else {
     return AdlerMemcpyWarmC(dstmem, srcmem, size_in_bytes, checksum);

@@ -70,7 +70,7 @@ bool AdlerChecksum::Equals(const AdlerChecksum &other) const {
 // Returns string representation of the Adler checksum.
 string AdlerChecksum::ToHexString() const {
   char buffer[128];
-  snprintf(buffer, sizeof(buffer), "%llx%llx%llx%llx", a1_, a2_, b1_, b2_);
+  snprintf(buffer, sizeof(buffer), "%016llx %016llx %016llx %016llx", a1_, a2_, b1_, b2_);
   return string(buffer);
 }
 
@@ -399,7 +399,124 @@ bool AdlerMemcpyAsm(uint64 *dstmem64, uint64 *srcmem64,
   // that there is no problem with memory this just mean that data was copied
   // from src to dst and checksum was calculated successfully).
   return true;
+#elif defined(STRESSAPPTEST_CPU_ARMV7A) && defined(__ARM_NEON__)
+  // Elements 0 to 3 are used for holding checksum terms a1, a2,
+  // b1, b2 respectively. These elements are filled by asm code.
+  // Checksum is seeded with the null checksum.
+  volatile uint64 checksum_arr[] __attribute__ ((aligned(16))) =
+      {1, 1, 0, 0};
+
+  if ((size_in_bytes >> 19) > 0) {
+    // Size is too large. Must be less than 2^19 bytes = 512 KB.
+    return false;
+  }
+
+  // Since we are moving 64 bytes at a time number of iterations = total size/64
+  uint32 blocks = size_in_bytes / 64;
+
+  uint64 *dst = dstmem64;
+  uint64 *src = srcmem64;
+
+  #define src_r "r3"
+  #define dst_r "r4"
+  #define blocks_r "r5"
+  #define crc_r "r6"
+
+  asm volatile (
+      "mov "src_r", %[src];	 	\n"
+      "mov "dst_r", %[dst]; 		\n"
+      "mov "crc_r", %[crc]; 		\n"
+      "mov "blocks_r", %[blocks]; 	\n"
+
+      // Loop over block count.
+      "cmp "blocks_r", #0; 	\n"   // Compare counter to zero.
+      "ble END;			\n"
+
+
+      // Preload upcoming cacheline.
+      "pld ["src_r", #0x0];	\n"
+      "pld ["src_r", #0x20];	\n"
+
+      // Init checksum
+      "vldm "crc_r", {q0};		\n"
+      "vmov.i32 q1, #0;			\n"
+
+      // Start of the loop which copies 48 bytes from source to dst each time.
+      "TOP:			\n"
+
+      // Make 3 moves each of 16 bytes from srcmem to qX registers.
+      // We are using 2 words out of 4 words in each qX register,
+      // word index 0 and word index 2. We'll swizzle them in a bit.
+      // Copy it.
+      "vldm "src_r"!, {q8, q9, q10, q11};	\n"
+      "vstm "dst_r"!, {q8, q9, q10, q11};	\n"
+
+      // Arrange it.
+      "vmov.i64 q12, #0;	\n"
+      "vmov.i64 q13, #0;	\n"
+      "vmov.i64 q14, #0;	\n"
+      "vmov.i64 q15, #0;	\n"
+      // This exchenges words 1,3 in the filled registers with 
+      // words 0,2 in the empty registers.
+      "vtrn.32 q8, q12;		\n"
+      "vtrn.32 q9, q13;		\n"
+      "vtrn.32 q10, q14;	\n"
+      "vtrn.32 q11, q15;	\n"
+
+      // Sum into q0, then into q1.
+      // Repeat this for q8 - q13.
+      // Overflow can occur only if there are more
+      // than 2^16 additions => more than 2^17 words => more than 2^19 bytes so
+      // if size_in_bytes > 2^19 than overflow occurs.
+      "vadd.i64 q0, q0, q8;	\n"
+      "vadd.i64 q1, q1, q0;	\n"
+      "vadd.i64 q0, q0, q12;	\n"
+      "vadd.i64 q1, q1, q0;	\n"
+      "vadd.i64 q0, q0, q9;	\n"
+      "vadd.i64 q1, q1, q0;	\n"
+      "vadd.i64 q0, q0, q13;	\n"
+      "vadd.i64 q1, q1, q0;	\n"
+
+      "vadd.i64 q0, q0, q10;	\n"
+      "vadd.i64 q1, q1, q0;	\n"
+      "vadd.i64 q0, q0, q14;	\n"
+      "vadd.i64 q1, q1, q0;	\n"
+      "vadd.i64 q0, q0, q11;	\n"
+      "vadd.i64 q1, q1, q0;	\n"
+      "vadd.i64 q0, q0, q15;	\n"
+      "vadd.i64 q1, q1, q0;	\n"
+
+      // Increment counter and loop.
+      "sub "blocks_r", "blocks_r", #1;	\n"
+      "cmp "blocks_r", #0;	\n"   // Compare counter to zero.
+      "bgt TOP;	\n"
+
+
+      "END:\n"
+      // Report checksum values A and B (both right now are two concatenated
+      // 64 bit numbers and have to be converted to 64 bit numbers)
+      // seems like Adler128 (since size of each part is 4 byte rather than
+      // 1 byte).
+      "vstm "crc_r", {q0, q1};	\n"
+
+      // Output registers.
+      :
+      // Input registers.
+      : [src] "r"(src), [dst] "r"(dst), [blocks] "r"(blocks) , [crc] "r"(checksum_arr)
+      : "memory", "cc", "r3", "r4", "r5", "r6", "q0", "q1", "q8","q9","q10", "q11", "q12","q13","q14","q15"
+  );  // asm.
+
+  if (checksum != NULL) {
+    checksum->Set(checksum_arr[0], checksum_arr[1],
+                  checksum_arr[2], checksum_arr[3]);
+  }
+
+  // Everything went fine, so return true (this does not mean
+  // that there is no problem with memory this just mean that data was copied
+  // from src to dst and checksum was calculated successfully).
+  return true;
 #else
+  #warning "No vector copy defined for this architecture."
   // Fall back to C implementation for anything else.
   return AdlerMemcpyWarmC(dstmem64, srcmem64, size_in_bytes, checksum);
 #endif

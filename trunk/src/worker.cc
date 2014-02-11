@@ -1359,10 +1359,10 @@ int WorkerThread::CrcWarmCopyPage(struct page_entry *dstpe,
                                    blocksize,
                                    currentblock * blocksize, 0);
       if (errorcount == 0) {
-        logprintf(0, "Log: CrcWarmCopyPage CRC mismatch %s != %s, "
+        logprintf(0, "Log: CrcWarmCopyPage CRC mismatch expected: %s != actual: %s, "
                      "but no miscompares found. Retrying with fresh data.\n",
-                  crc.ToHexString().c_str(),
-                  expectedcrc->ToHexString().c_str());
+                  expectedcrc->ToHexString().c_str(),
+                  crc.ToHexString().c_str() );
         if (!tag_mode_) {
           // Copy the data originally read from this region back again.
           // This data should have any corruption read originally while
@@ -1382,7 +1382,7 @@ int WorkerThread::CrcWarmCopyPage(struct page_entry *dstpe,
                       expectedcrc->ToHexString().c_str());
             struct ErrorRecord er;
             er.actual = sourcemem[0];
-            er.expected = 0x0;
+            er.expected = 0xbad;
             er.vaddr = sourcemem;
             ProcessError(&er, 0, "Hardware Error");
           }
@@ -1954,7 +1954,7 @@ bool FileThread::Work() {
   // Load patterns into page records.
   page_recs_ = new struct PageRec[sat_->disk_pages()];
   for (int i = 0; i < sat_->disk_pages(); i++) {
-    page_recs_[i].pattern = new struct Pattern();
+    page_recs_[i].pattern = new class Pattern();
   }
 
   // Loop until done.
