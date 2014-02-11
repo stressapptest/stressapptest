@@ -13,7 +13,8 @@ To build from source:
 The build/installation package follows the GNU guidelines, so, after download the latest package, just type, in this order:
 
 {{{
-tar zxvf stressapptest-1.0.0_autoconf.tar.gz
+svn checkout http://stressapptest.googlecode.com/svn/trunk/ stressapptest
+cd stressapptest
 ./configure
 make
 sudo make install
