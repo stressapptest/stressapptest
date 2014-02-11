@@ -240,7 +240,7 @@ class WorkerThread {
   int64 ReadThreadTimer() {
     struct timeval end_time_;
     gettimeofday(&end_time_, NULL);
-    return (end_time_.tv_sec - start_time_.tv_sec)*1000000 +
+    return (end_time_.tv_sec - start_time_.tv_sec)*1000000ULL +
       (end_time_.tv_usec - start_time_.tv_usec);
   }
   // Stops per-WorkerThread timer and records thread run duration.
@@ -264,10 +264,10 @@ class WorkerThread {
   // Calculate worker thread specific bandwidth.
   virtual float GetMemoryBandwidth()
     {return GetMemoryCopiedData() / (
-        runduration_usec_ * 1.0 / 1000000);}
+        runduration_usec_ * 1.0 / 1000000.);}
   virtual float GetDeviceBandwidth()
     {return GetDeviceCopiedData() / (
-        runduration_usec_ * 1.0 / 1000000);}
+        runduration_usec_ * 1.0 / 1000000.);}
 
   void set_cpu_mask(cpu_set_t *mask) {
     memcpy(&cpu_mask_, mask, sizeof(*mask));
@@ -421,7 +421,7 @@ class FileThread : public WorkerThread {
   // Record of where these pages were sourced from, and what
   // potentially broken components they passed through.
   struct PageRec {
-     struct Pattern *pattern;  // This is the data it should contain.
+     class Pattern *pattern;  // This is the data it should contain.
      void *src;  // This is the memory location the data was sourced from.
      void *dst;  // This is where it ended up.
   };

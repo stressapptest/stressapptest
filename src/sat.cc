@@ -1614,7 +1614,7 @@ void Sat::AnalysisAllStats() {
        map_it != workers_map_.end(); ++map_it) {
     for (WorkerVector::const_iterator it = map_it->second->begin();
          it != map_it->second->end(); ++it) {
-      thread_runtime_sec = (*it)->GetRunDurationUSec()*1.0/1000000;
+      thread_runtime_sec = (*it)->GetRunDurationUSec()*1.0/1000000.;
       total_data += (*it)->GetMemoryCopiedData();
       total_data += (*it)->GetDeviceCopiedData();
       if (thread_runtime_sec > max_runtime_sec) {

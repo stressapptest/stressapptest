@@ -17,6 +17,7 @@
 #define STRESSAPPTEST_OS_H_
 
 #include <dirent.h>
+#include <unistd.h>
 #include <sys/syscall.h>
 
 #include <string>
@@ -153,7 +154,6 @@ class OsLayer {
     asm volatile("clflush (%0)" : : "r" (vaddr));
     asm volatile("mfence");
 #elif defined(STRESSAPPTEST_CPU_ARMV7A)
-    #warning "Unsupported CPU type ARMV7A: Using syscall to cache flush."
     // ARMv7a cachelines are 8 words (32 bytes).
     syscall(__ARM_NR_cacheflush, vaddr, reinterpret_cast<char*>(vaddr) + 32, 0);
 #else
@@ -267,10 +267,10 @@ class OsLayer {
     __asm __volatile("rdtsc" : "=a" (data.l32.l), "=d"(data.l32.h));
     tsc = data.l64;
 #elif defined(STRESSAPPTEST_CPU_ARMV7A)
-  #warning "Unsupported CPU type ARMV7A: your build may not function correctly"
+    #warning "Unsupported CPU type ARMV7A: your timer may not function correctly"
     tsc = 0;
 #else
-  #warning "Unsupported CPU type: your build may not function correctly"
+    #warning "Unsupported CPU type: your timer may not function correctly"
     tsc = 0;
 #endif
     return (tsc);
@@ -381,7 +381,7 @@ class OsLayer {
   int   num_nodes_;              // Number of nodes in the system.
   int   num_cpus_per_node_;      // Number of cpus per node in the system.
   int   address_mode_;           // Are we running 32 or 64 bit?
-  bool  has_sse2_;               // Do we have sse2 instructions?
+  bool  has_vector_;             // Do we have sse2/neon instructions?
   bool  has_clflush_;            // Do we have clflush instructions?
   bool  use_flush_page_cache_;   // Do we need to flush the page cache?
 
