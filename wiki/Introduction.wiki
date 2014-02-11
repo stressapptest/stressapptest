@@ -20,7 +20,9 @@ stressapptest is a userspace test, primarily composed of threads doing memory co
 
 ==Downloading it== 
 
-stressapptest can be download at http://code.google.com/p/stressapptest/downloads
+stressapptest can be download through svn at
+svn checkout http://stressapptest.googlecode.com/svn/trunk/ stressapptest
+(tgz downloads are no longer supported by code.google.com)
 
 ==How to Install==
 
