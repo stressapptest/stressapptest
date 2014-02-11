@@ -1,6 +1,16 @@
 #summary Installation Guide for Stressful Application Test
 
-The installation package follows the GNU guidelines, so, after download the latest package, just type, on this order:
+stressapptest is often available on linux and can be installed as a distro package:
+
+{{{
+sudo apt-get install stressapptest
+sudo emerge stressaptest
+sudo yum install stressapptest
+sudo zypper install stressapptest
+}}}
+
+To build from source: 
+The build/installation package follows the GNU guidelines, so, after download the latest package, just type, in this order:
 
 {{{
 tar zxvf stressapptest-1.0.0_autoconf.tar.gz
