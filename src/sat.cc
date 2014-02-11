@@ -676,6 +676,7 @@ Sat::Sat() {
   user_break_ = false;
   verbosity_ = 8;
   Logger::GlobalLogger()->SetVerbosity(verbosity_);
+  print_delay_ = 10;
   strict_ = 1;
   warm_ = 0;
   run_on_anything_ = 0;
@@ -849,6 +850,9 @@ bool Sat::ParseArgs(int argc, char **argv) {
 
     // Verbosity level.
     ARG_IVALUE("-v", verbosity_);
+
+    // Chatty printout level.
+    ARG_IVALUE("--printsec", print_delay_);
 
     // Turn off timestamps logging.
     ARG_KVALUE("--no_timestamps", log_timestamps_, false);
@@ -1105,6 +1109,7 @@ void Sat::PrintHelp() {
          " --no_timestamps  do not prefix timestamps to log messages\n"
          " --max_errors n   exit early after finding 'n' errors\n"
          " -v level         verbosity (0-20), default is 8\n"
+         " --printsec secs  How often to print 'seconds remaining'\n"
          " -W               Use more CPU-stressful memory copy\n"
          " -A               run in degraded mode on incompatible systems\n"
          " -p pagesize      size in bytes of memory chunks\n"
@@ -1885,12 +1890,12 @@ bool Sat::Run() {
   // All of these are in seconds.  You probably want them to be >=
   // kSleepFrequency and multiples of kSleepFrequency, but neither is necessary.
   static const time_t kInjectionFrequency = 10;
-  static const time_t kPrintFrequency = 10;
+  // print_delay_ determines "seconds remaining" chatty update.
 
   const time_t start = time(NULL);
   const time_t end = start + runtime_seconds_;
   time_t now = start;
-  time_t next_print = start + kPrintFrequency;
+  time_t next_print = start + print_delay_;
   time_t next_pause = start + pause_delay_;
   time_t next_resume = 0;
   time_t next_injection;
@@ -1926,7 +1931,7 @@ bool Sat::Run() {
     if (now >= next_print) {
       // Print a count down message.
       logprintf(5, "Log: Seconds remaining: %d\n", seconds_remaining);
-      next_print = NextOccurance(kPrintFrequency, start, now);
+      next_print = NextOccurance(print_delay_, start, now);
     }
 
     if (next_injection && now >= next_injection) {

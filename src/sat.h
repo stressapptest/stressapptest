@@ -163,8 +163,9 @@ class Sat {
   volatile sig_atomic_t user_break_;  // User has signalled early exit.  Used as
                                       // a boolean.
   int verbosity_;                     // How much to print.
+  int print_delay_;                   // Chatty update frequency.
   int strict_;                        // Check results per transaction.
-  int warm_;                          // FPU warms CPU while coying.
+  int warm_;                          // FPU warms CPU while copying.
   int address_mode_;                  // 32 or 64 bit binary.
   bool stop_on_error_;                // Exit immendiately on any error.
   bool findfiles_;                    // Autodetect tempfile locations.
