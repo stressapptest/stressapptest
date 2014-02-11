@@ -12,60 +12,53 @@ else
 fi
 
 AC_CANONICAL_HOST
-AC_CANONICAL_BUILD
 # Checking for target cpu and setting custom configuration
 # for the different platforms
-AC_CANONICAL_TARGET
-case x"$target_cpu" in
-  "xx86_64")
+AS_CASE(["$host_cpu"],
+  [*x86_64*], [
     AC_DEFINE([STRESSAPPTEST_CPU_X86_64],[],
               [Defined if the target CPU is x86_64])
-    ;;
-  "xi686")
+    ], 
+  [*i686*], [
     AC_DEFINE([STRESSAPPTEST_CPU_I686],[],
               [Defined if the target CPU is i686])
-    ;;
-  "xpowerpc")
+    ], 
+  [*powerpc*], [
     AC_DEFINE([STRESSAPPTEST_CPU_PPC],[],
               [Defined if the target CPU is PowerPC])
-    ;;
-  "xarmv7a")
+    ], 
+  [*armv7a*], [
     AC_DEFINE([STRESSAPPTEST_CPU_ARMV7A],[],
               [Defined if the target CPU is armv7a])
-    ;;
-  *)
-    AC_MSG_ERROR([$target_cpu is not supported! Try x86_64, i686, powerpc, or armv7a])
-    ;;
-esac
+    ], 
+  [AC_MSG_WARN([Unsupported CPU: $host_cpu! Try x86_64, i686, powerpc, or armv7a])]
+)
 
-_os=`uname`
 ## The following allows like systems to share settings. This is not meant to
 ## imply that these OS are the same thing. From OpenOffice dmake configure.in
-case "$_os" in
-  "Linux")
+AS_CASE(["$host_os"],
+  [*linux*], [
     OS_VERSION=linux
     AC_DEFINE([STRESSAPPTEST_OS_LINUX],[],
               [Defined if the target OS is Linux])
-    ;;
-  "Darwin")
+    ],
+  [*darwin*], [
     OS_VERSION=macosx
     AC_DEFINE([STRESSAPPTEST_OS_DARWIN],[],
               [Defined if the target OS is OSX])
-    ;;
-  "FreeBSD")
+    ],
+  [*freebsd*], [
     OS_VERSION=bsd
     AC_DEFINE([STRESSAPPTEST_OS_BSD],[],
               [Defined if the target OS is BSD based])
-    ;;
-  "NetBSD")
+    ],
+  [*netbsd*], [
     OS_VERSION=bsd
     AC_DEFINE([STRESSAPPTEST_OS_BSD],[],
               [Defined if the target OS is BSD based])
-    ;;
-  *)
-    AC_MSG_ERROR([$_os operating system is not suitable to build dmake!])
-    ;;
-esac
+    ],
+  [AC_MSG_WARN([unsupported system: $host_os])]
+)
 
 AM_INIT_AUTOMAKE([-Wall -Werror foreign])
 AC_CONFIG_SRCDIR([src/])
@@ -95,10 +88,14 @@ AC_DEFINE_UNQUOTED([STRESSAPPTEST_TIMESTAMP],
                    "$username @ $hostname on $timestamp",
                    [Timestamp when ./configure was executed])
 
-#Default cxxflags
-CXXFLAGS="$CXXFLAGS -DCHECKOPTS"
-CXXFLAGS="$CXXFLAGS -Wreturn-type -Wunused -Wuninitialized -Wall -Wno-psabi"
-CXXFLAGS="$CXXFLAGS -O3 -funroll-all-loops  -funroll-loops -DNDEBUG"
+AC_ARG_ENABLE([default-optimizations],
+    [AS_HELP_STRING([--disable-default-optimizations], [Disable default optimization flag overrides])])
+AS_IF([test x"$enable_default_optimizations" != xno], [
+    #Default cxxflags
+    CXXFLAGS="$CXXFLAGS -DCHECKOPTS"
+    CXXFLAGS="$CXXFLAGS -Wreturn-type -Wunused -Wuninitialized -Wall -Wno-psabi"
+    CXXFLAGS="$CXXFLAGS -O3 -funroll-all-loops  -funroll-loops -DNDEBUG"
+])
 
 # Checks for header files.
 AC_HEADER_DIRENT
