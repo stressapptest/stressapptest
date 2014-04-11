@@ -4411,7 +4411,7 @@ if test x"$enable_default_optimizations" != xno; then :
 
     #Default cxxflags
     CXXFLAGS="$CXXFLAGS -DCHECKOPTS"
-    CXXFLAGS="$CXXFLAGS -Wreturn-type -Wunused -Wuninitialized -Wall -Wno-psabi"
+    CXXFLAGS="$CXXFLAGS -Wreturn-type -Wunused -Wuninitialized -Wall"
     CXXFLAGS="$CXXFLAGS -O3 -funroll-all-loops  -funroll-loops -DNDEBUG"
 
 fi
