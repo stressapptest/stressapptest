@@ -93,7 +93,7 @@ AC_ARG_ENABLE([default-optimizations],
 AS_IF([test x"$enable_default_optimizations" != xno], [
     #Default cxxflags
     CXXFLAGS="$CXXFLAGS -DCHECKOPTS"
-    CXXFLAGS="$CXXFLAGS -Wreturn-type -Wunused -Wuninitialized -Wall -Wno-psabi"
+    CXXFLAGS="$CXXFLAGS -Wreturn-type -Wunused -Wuninitialized -Wall"
     CXXFLAGS="$CXXFLAGS -O3 -funroll-all-loops  -funroll-loops -DNDEBUG"
 ])
 
