@@ -3,7 +3,7 @@ AC_INIT([stressapptest], [1.0.7_autoconf], [opensource@google.com])
 
 AC_ARG_WITH(static, [  --with-static            enable static linking])
 
-if test "$with_static" == "yes"
+if test "$with_static" = "yes"
 then
   AC_MSG_NOTICE([Compiling with staticaly linked libraries.])
   LIBS="$LIBS -static"
