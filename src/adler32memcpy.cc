@@ -423,22 +423,22 @@ bool AdlerMemcpyAsm(uint64 *dstmem64, uint64 *srcmem64,
   #define crc_r "r6"
 
   asm volatile (
-      "mov "src_r", %[src];	 	\n"
-      "mov "dst_r", %[dst]; 		\n"
-      "mov "crc_r", %[crc]; 		\n"
-      "mov "blocks_r", %[blocks]; 	\n"
+      "mov " src_r ", %[src];	 	\n"
+      "mov " dst_r ", %[dst]; 		\n"
+      "mov " crc_r ", %[crc]; 		\n"
+      "mov " blocks_r ", %[blocks]; 	\n"
 
       // Loop over block count.
-      "cmp "blocks_r", #0; 	\n"   // Compare counter to zero.
+      "cmp " blocks_r ", #0; 	\n"   // Compare counter to zero.
       "ble END;			\n"
 
 
       // Preload upcoming cacheline.
-      "pld ["src_r", #0x0];	\n"
-      "pld ["src_r", #0x20];	\n"
+      "pld [" src_r ", #0x0];	\n"
+      "pld [" src_r ", #0x20];	\n"
 
       // Init checksum
-      "vldm "crc_r", {q0};		\n"
+      "vldm " crc_r ", {q0};		\n"
       "vmov.i32 q1, #0;			\n"
 
       // Start of the loop which copies 48 bytes from source to dst each time.
@@ -448,8 +448,8 @@ bool AdlerMemcpyAsm(uint64 *dstmem64, uint64 *srcmem64,
       // We are using 2 words out of 4 words in each qX register,
       // word index 0 and word index 2. We'll swizzle them in a bit.
       // Copy it.
-      "vldm "src_r"!, {q8, q9, q10, q11};	\n"
-      "vstm "dst_r"!, {q8, q9, q10, q11};	\n"
+      "vldm " src_r "!, {q8, q9, q10, q11};	\n"
+      "vstm " dst_r "!, {q8, q9, q10, q11};	\n"
 
       // Arrange it.
       "vmov.i64 q12, #0;	\n"
@@ -487,8 +487,8 @@ bool AdlerMemcpyAsm(uint64 *dstmem64, uint64 *srcmem64,
       "vadd.i64 q1, q1, q0;	\n"
 
       // Increment counter and loop.
-      "sub "blocks_r", "blocks_r", #1;	\n"
-      "cmp "blocks_r", #0;	\n"   // Compare counter to zero.
+      "sub " blocks_r ", " blocks_r ", #1;	\n"
+      "cmp " blocks_r ", #0;	\n"   // Compare counter to zero.
       "bgt TOP;	\n"
 
 
@@ -497,7 +497,7 @@ bool AdlerMemcpyAsm(uint64 *dstmem64, uint64 *srcmem64,
       // 64 bit numbers and have to be converted to 64 bit numbers)
       // seems like Adler128 (since size of each part is 4 byte rather than
       // 1 byte).
-      "vstm "crc_r", {q0, q1};	\n"
+      "vstm " crc_r ", {q0, q1};	\n"
 
       // Output registers.
       :
