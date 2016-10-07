@@ -2056,7 +2056,7 @@ bool NetworkListenThread::Listen() {
   sa.sin_addr.s_addr = INADDR_ANY;
   sa.sin_port = htons(kNetworkPort);
 
-  if (-1 == bind(sock_, (struct sockaddr*)&sa, sizeof(struct sockaddr))) {
+  if (-1 == ::bind(sock_, (struct sockaddr*)&sa, sizeof(struct sockaddr))) {
     char buf[256];
     sat_strerror(errno, buf, sizeof(buf));
     logprintf(0, "Process Error: Cannot bind socket: %s\n", buf);
