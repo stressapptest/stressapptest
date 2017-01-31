@@ -63,6 +63,7 @@ OsLayer::OsLayer() {
   dynamic_mapped_shmem_ = false;
   mmapped_allocation_ = false;
   shmid_ = 0;
+  channels_ = NULL;
 
   time_initialized_ = 0;
 
