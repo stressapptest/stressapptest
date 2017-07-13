@@ -427,9 +427,9 @@ int64 OsLayer::FindFreeMemSize() {
     }
   } else {
     if (physsize < 2048LL * kMegabyte) {
-      minsize = ((pages * 85) / 100) * pagesize;
+      minsize = ((pages * 80) / 100) * pagesize;
     } else {
-      minsize = ((pages * 95) / 100) * pagesize - (192 * kMegabyte);
+      minsize = ((pages * 90) / 100) * pagesize - (192 * kMegabyte);
     }
     // Make sure that at least reserve_mb_ is left for the system.
     if (reserve_mb_ > 0) {

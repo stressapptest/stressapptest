@@ -39,7 +39,7 @@ void Logger::VLogF(int priority, const char *format, va_list args) {
   }
   char buffer[4096];
   size_t length = 0;
-  if (log_timestamps_) {
+  if (0) {
     time_t raw_time;
     time(&raw_time);
     struct tm time_struct;
@@ -86,7 +86,7 @@ Logger::Logger()
     : verbosity_(20),
       log_fd_(-1),
       thread_running_(false),
-      log_timestamps_(true) {
+      log_timestamps_(false) {
   LOGGER_ASSERT(0 == pthread_mutex_init(&queued_lines_mutex_, NULL));
   LOGGER_ASSERT(0 == pthread_cond_init(&queued_lines_cond_, NULL));
   LOGGER_ASSERT(0 == pthread_cond_init(&full_queue_cond_, NULL));
