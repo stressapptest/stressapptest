@@ -464,6 +464,27 @@ int64 OsLayer::FindFreeMemSize() {
     size = minsize;
   }
 
+  uint64 length = size;
+  void *map_buf = 0;
+retry1:
+  map_buf = mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (map_buf != MAP_FAILED) {
+	  size = length;
+	  int retval = munmap(map_buf, length);
+	  logprintf(0, "Log: Using mmap() allocation  dynamic apploc at %p. %lld, ret:%d\n", map_buf, length/kMegabyte, retval);
+  } else {
+	  logprintf(0, "Log: mmap() allocation e %p.%d, %s\n", map_buf, errno, strerror(errno));
+	  if (errno == 12) {
+		  if (length <= 100LL * kMegabyte)
+			  goto rt_out1;
+		  length = length - 100LL * kMegabyte;
+		  logprintf(0, "Log: rt: at %lld\n", length/kMegabyte);
+		  goto retry1;
+	  }
+
+  }
+rt_out1:
+
   logprintf(5, "Log: Total %lld MB. Free %lld MB. Hugepages %lld MB. "
                "Targeting %lld MB (%lld%%)\n",
             physsize / kMegabyte,
