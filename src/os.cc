@@ -427,10 +427,11 @@ int64 OsLayer::FindFreeMemSize() {
     }
   } else {
     if (physsize < 2048LL * kMegabyte) {
-      minsize = ((pages * 80) / 100) * pagesize;
+      minsize = ((pages * 85) / 100) * pagesize;
     } else {
-      minsize = ((pages * 90) / 100) * pagesize - (192 * kMegabyte);
+      minsize = ((pages * 96) / 100) * pagesize - (192 * kMegabyte);
     }
+    minsize = avphyssize - 110*kMegabyte;
     // Make sure that at least reserve_mb_ is left for the system.
     if (reserve_mb_ > 0) {
       int64 totalsize = pages * pagesize;
@@ -467,18 +468,19 @@ int64 OsLayer::FindFreeMemSize() {
   uint64 length = size;
   void *map_buf = 0;
 retry1:
+
+  logprintf(0, "try %lld\t", length/kMegabyte);
   map_buf = mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   if (map_buf != MAP_FAILED) {
 	  size = length;
 	  int retval = munmap(map_buf, length);
-	  logprintf(0, "Log: Using mmap() allocation  dynamic apploc at %p. %lld, ret:%d\n", map_buf, length/kMegabyte, retval);
+	  logprintf(0, "\nLog: Using mmap() allocation  dynamic apploc at %p. %lld, ret:%d\n", map_buf, length/kMegabyte, retval);
   } else {
-	  logprintf(0, "Log: mmap() allocation e %p.%d, %s\n", map_buf, errno, strerror(errno));
+	  //logprintf(0, "Log: mmap() allocation e %p.%d, %s\n", map_buf, errno, strerror(errno));
 	  if (errno == 12) {
 		  if (length <= 100LL * kMegabyte)
 			  goto rt_out1;
 		  length = length - 100LL * kMegabyte;
-		  logprintf(0, "Log: rt: at %lld\n", length/kMegabyte);
 		  goto retry1;
 	  }
 
