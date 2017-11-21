@@ -2460,9 +2460,15 @@ $as_echo "#define STRESSAPPTEST_CPU_PPC /**/" >>confdefs.h
 $as_echo "#define STRESSAPPTEST_CPU_ARMV7A /**/" >>confdefs.h
 
      ;; #(
+  *aarch64*) :
+
+
+$as_echo "#define STRESSAPPTEST_CPU_AARCH64 /**/" >>confdefs.h
+
+     ;; #(
   *) :
-    { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: Unsupported CPU: $host_cpu! Try x86_64, i686, powerpc, or armv7a" >&5
-$as_echo "$as_me: WARNING: Unsupported CPU: $host_cpu! Try x86_64, i686, powerpc, or armv7a" >&2;}
+    { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: Unsupported CPU: $host_cpu! Try x86_64, i686, powerpc, armv7a, or aarch64" >&5
+$as_echo "$as_me: WARNING: Unsupported CPU: $host_cpu! Try x86_64, i686, powerpc, armv7a, or aarch64" >&2;}
  ;;
 esac
 
