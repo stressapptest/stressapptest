@@ -156,6 +156,12 @@ class OsLayer {
 #elif defined(STRESSAPPTEST_CPU_ARMV7A)
     // ARMv7a cachelines are 8 words (32 bytes).
     syscall(__ARM_NR_cacheflush, vaddr, reinterpret_cast<char*>(vaddr) + 32, 0);
+#elif defined(STRESSAPPTEST_CPU_AARCH64)
+    asm volatile("dc cvau, %0" : : "r" (vaddr));
+    asm volatile("dsb ish");
+    asm volatile("ic ivau, %0" : : "r" (vaddr));
+    asm volatile("dsb ish");
+    asm volatile("isb");
 #else
   #warning "Unsupported CPU type: Unable to force cache flushes."
 #endif
@@ -186,7 +192,7 @@ class OsLayer {
       asm volatile("clflush (%0)" : : "r" (*vaddrs++));
     }
     asm volatile("mfence");
-#elif defined(STRESSAPPTEST_CPU_ARMV7A)
+#elif defined(STRESSAPPTEST_CPU_ARMV7A) || defined(STRESSAPPTEST_CPU_AARCH64)
     while (*vaddrs) {
       FastFlush(*vaddrs++);
     }
@@ -211,7 +217,7 @@ class OsLayer {
     // instruction. For example, software can use an MFENCE instruction to
     // insure that previous stores are included in the write-back.
     asm volatile("clflush (%0)" : : "r" (vaddr));
-#elif defined(STRESSAPPTEST_CPU_ARMV7A)
+#elif defined(STRESSAPPTEST_CPU_ARMV7A) || defined(STRESSAPPTEST_CPU_AARCH64)
     FastFlush(vaddr);
 #else
     #warning "Unsupported CPU type: Unable to force cache flushes."
@@ -236,7 +242,7 @@ class OsLayer {
     // instruction. For example, software can use an MFENCE instruction to
     // insure that previous stores are included in the write-back.
     asm volatile("mfence");
-#elif defined(STRESSAPPTEST_CPU_ARMV7A)
+#elif defined(STRESSAPPTEST_CPU_ARMV7A) || defined(STRESSAPPTEST_CPU_AARCH64)
     // This is a NOP, FastFlushHint() always does a full flush, so there's
     // nothing to do for FastFlushSync().
 #else
@@ -269,6 +275,8 @@ class OsLayer {
 #elif defined(STRESSAPPTEST_CPU_ARMV7A)
     #warning "Unsupported CPU type ARMV7A: your timer may not function correctly"
     tsc = 0;
+#elif defined(STRESSAPPTEST_CPU_AARCH64)
+    __asm __volatile("mrs %0, CNTVCT_EL0" : "=r" (tsc) : : );
 #else
     #warning "Unsupported CPU type: your timer may not function correctly"
     tsc = 0;
