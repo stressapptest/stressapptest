@@ -174,7 +174,7 @@ class Sat {
   bool crazy_error_injection_;        // Simulate lots of errors.
   uint64 max_errorcount_;             // Number of errors before forced exit.
   int run_on_anything_;               // Ignore unknown machine ereor.
-  int use_logfile_;                   // Log to a file.
+  bool use_logfile_;                  // Log to a file.
   char logfilename_[255];             // Name of file to log to.
   int logfile_;                       // File handle to log to.
   bool log_timestamps_;               // Whether to add timestamps to log lines.
