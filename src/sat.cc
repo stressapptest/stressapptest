@@ -680,7 +680,7 @@ Sat::Sat() {
   strict_ = 1;
   warm_ = 0;
   run_on_anything_ = 0;
-  use_logfile_ = 0;
+  use_logfile_ = false;
   logfile_ = 0;
   log_timestamps_ = true;
   // Detect 32/64 bit binary.
@@ -1015,7 +1015,7 @@ bool Sat::ParseArgs(int argc, char **argv) {
 
   // Set logfile flag.
   if (strcmp(logfilename_, ""))
-    use_logfile_ = 1;
+    use_logfile_ = true;
   // Checks valid page length.
   if (page_length_ &&
       !(page_length_ & (page_length_ - 1)) &&
