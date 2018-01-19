@@ -469,7 +469,7 @@ int64 OsLayer::FindFreeMemSize() {
   void *map_buf = 0;
 retry1:
 
-  logprintf(0, "try %lld\t", length/kMegabyte);
+  logprintf(0, "try: %lld\t", length/kMegabyte);
   map_buf = mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   if (map_buf != MAP_FAILED) {
 	  size = length;
@@ -495,6 +495,12 @@ rt_out1:
             size / kMegabyte,
             size * 100 / physsize);
 
+  totalmemsize_ = size;
+  int hwinfoms = getHardwareInfoFor(30);
+  if ( hwinfoms != 0) {
+	logprintf(0,"use hwinfo: 0x%x\n", hwinfoms);
+	size = hwinfoms*50*kMegabyte;
+  }
   totalmemsize_ = size;
   return size;
 }

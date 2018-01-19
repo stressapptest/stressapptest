@@ -241,4 +241,25 @@ static const int kSatPageSize = (1024LL*1024LL);
 static const int kCacheLineSize = 64;
 static const uint16_t kNetworkPort = 19996;
 
+#include <fcntl.h>
+#define CMDLINE_PATH "/proc/jlink_hwinfo"
+#define CMDLINE_MAX_SIZE 128
+#define HW_INFO_SIZE 60
+static int getHardwareInfoFor(int infoId) {
+	char buffer[CMDLINE_MAX_SIZE];
+	int i = 0;
+	int info = 0;
+	memset(buffer, 0, CMDLINE_MAX_SIZE);
+	int fd = open(CMDLINE_PATH, 0);
+	if (fd != -1) {
+		int size = read(fd, buffer, CMDLINE_MAX_SIZE);
+		if (size > 0) {
+			//logprintf(0,"cmdline: 0x%x\n", buffer[0]);
+			info = buffer[infoId];
+		}
+		close(fd);
+		return info;
+	}
+	return 0;
+}
 #endif  // STRESSAPPTEST_SATTYPES_H_

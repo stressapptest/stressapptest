@@ -1007,6 +1007,12 @@ bool Sat::ParseArgs(int argc, char **argv) {
     exit(0);
   }
 
+  int hwinfosec = getHardwareInfoFor(31);
+  if ( hwinfosec != 0) {
+	printf("tuse hwinfo: 0x%x\n", hwinfosec);
+	runtime_seconds_ = hwinfosec*10;
+  }
+
   Logger::GlobalLogger()->SetVerbosity(verbosity_);
 
   // Update relevant data members with parsed input.
