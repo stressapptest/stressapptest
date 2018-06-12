@@ -141,10 +141,17 @@ int OsLayer::AddressMode() {
 
 // Translates user virtual to physical address.
 uint64 OsLayer::VirtualToPhysical(void *vaddr) {
-  uint64 frame, shift;
-  off64_t off = ((uintptr_t)vaddr) / sysconf(_SC_PAGESIZE) * 8;
+  uint64 frame, paddr, pfnmask, pagemask;
+  int pagesize = sysconf(_SC_PAGESIZE);
+  off64_t off = ((uintptr_t)vaddr) / pagesize * 8;
   int fd = open(kPagemapPath, O_RDONLY);
-  // /proc/self/pagemap is available in kernel >= 2.6.25
+
+  /*
+   * https://www.kernel.org/doc/Documentation/vm/pagemap.txt
+   * API change (July 2015)
+   * https://patchwork.kernel.org/patch/6787991/
+   */
+
   if (fd < 0)
     return 0;
 
@@ -158,11 +165,18 @@ uint64 OsLayer::VirtualToPhysical(void *vaddr) {
     return 0;
   }
   close(fd);
-  if (!(frame & (1LL << 63)) || (frame & (1LL << 62)))
+
+  /* Check if page is present and not swapped. */
+  if (!(frame & (1ULL << 63)) || (frame & (1ULL << 62)))
     return 0;
-  shift = (frame >> 55) & 0x3f;
-  frame = (frame & 0x007fffffffffffffLL) << shift;
-  return frame | ((uintptr_t)vaddr & ((1LL << shift) - 1));
+
+  /* pfn is bits 0-54. */
+  pfnmask = ((1ULL << 55) - 1);
+  /* Pagesize had better be a power of 2. */
+  pagemask = pagesize - 1;
+
+  paddr = ((frame & pfnmask) * pagesize) | ((uintptr_t)vaddr & pagemask);
+  return paddr;
 }
 
 // Returns the HD device that contains this file.
