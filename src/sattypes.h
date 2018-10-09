@@ -227,6 +227,8 @@ inline void cpuid(
   return;
 #elif defined(STRESSAPPTEST_CPU_ARMV7A)
   return;
+#elif defined(STRESSAPPTEST_CPU_AARCH64)
+  return;
 #else
 #warning "Unsupported CPU type."
 #endif

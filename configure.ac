@@ -1,5 +1,5 @@
 AC_PREREQ(2.61)
-AC_INIT([stressapptest], [1.0.8_autoconf], [opensource@google.com])
+AC_INIT([stressapptest], [1.0.9_autoconf], [opensource@google.com])
 
 AC_ARG_WITH(static, [  --with-static            enable static linking])
 
@@ -31,7 +31,11 @@ AS_CASE(["$host_cpu"],
     AC_DEFINE([STRESSAPPTEST_CPU_ARMV7A],[],
               [Defined if the target CPU is armv7a])
     ], 
-  [AC_MSG_WARN([Unsupported CPU: $host_cpu! Try x86_64, i686, powerpc, or armv7a])]
+  [*aarch64*], [
+    AC_DEFINE([STRESSAPPTEST_CPU_AARCH64],[],
+              [Defined if the target CPU is aarch64])
+    ],
+[AC_MSG_WARN([Unsupported CPU: $host_cpu! Try x86_64, i686, powerpc, armv7a, or aarch64])]
 )
 
 ## The following allows like systems to share settings. This is not meant to
