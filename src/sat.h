@@ -137,7 +137,8 @@ class Sat {
   int CpuCount();
   // Return the worst-case (largest) cache line size of the system.
   int CacheLineSize();
-
+  // Read int values from kernel file system e.g. sysfs
+  int ReadInt(const char *filename, int *value);
   // Collect error counts from threads.
   int64 GetTotalErrorCount();
 
