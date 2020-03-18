@@ -320,6 +320,7 @@ class WorkerThread {
   // Compare a region of memory with a known data patter, and report errors.
   virtual int CheckRegion(void *addr,
                           class Pattern *pat,
+                          uint32 lastcpu,
                           int64 length,
                           int offset,
                           int64 patternoffset);

@@ -44,6 +44,7 @@ struct page_entry {
   int32 tag;     // These are tags for use in NUMA affinity or other uses.
   uint32 touch;  // Counter of the number of reads from this page.
   uint64 ts;     // Timestamp of the last read from this page.
+  uint32 lastcpu; // Last CPU to write this page.
   class Pattern *lastpattern;  // Expected Pattern at last read.
 };
 
@@ -54,7 +55,7 @@ static inline void init_pe(struct page_entry *pe) {
   pe->tag = kInvalidTag;
   pe->touch = 0;
   pe->ts = 0;
-  pe->lastpattern = NULL;
+  pe->lastcpu = 0;
 }
 
 // This is a threadsafe randomized queue of pages for
