@@ -223,6 +223,8 @@ inline void cpuid(
     : "a" (*eax)
   );  // Asm
 #endif  // defined(__PIC__) && defined(STRESSAPPTEST_CPU_I686)
+#elif defined(STRESSAPPTEST_CPU_MIPS)
+  return;
 #elif defined(STRESSAPPTEST_CPU_PPC)
   return;
 #elif defined(STRESSAPPTEST_CPU_ARMV7A)
