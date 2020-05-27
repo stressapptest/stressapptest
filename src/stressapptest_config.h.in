@@ -181,6 +181,9 @@
 /* Defined if the target CPU is i686 */
 #undef STRESSAPPTEST_CPU_I686
 
+/* Defined if the target CPU is MIPS */
+#undef STRESSAPPTEST_CPU_MIPS
+
 /* Defined if the target CPU is PowerPC */
 #undef STRESSAPPTEST_CPU_PPC
 

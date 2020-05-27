@@ -23,6 +23,10 @@ AS_CASE(["$host_cpu"],
     AC_DEFINE([STRESSAPPTEST_CPU_I686],[],
               [Defined if the target CPU is i686])
     ], 
+  [*mips*], [
+    AC_DEFINE([STRESSAPPTEST_CPU_MIPS],[],
+              [Defined if the target CPU is MIPS])
+    ], 
   [*powerpc*], [
     AC_DEFINE([STRESSAPPTEST_CPU_PPC],[],
               [Defined if the target CPU is PowerPC])
@@ -35,7 +39,7 @@ AS_CASE(["$host_cpu"],
     AC_DEFINE([STRESSAPPTEST_CPU_AARCH64],[],
               [Defined if the target CPU is aarch64])
     ],
-[AC_MSG_WARN([Unsupported CPU: $host_cpu! Try x86_64, i686, powerpc, armv7a, or aarch64])]
+[AC_MSG_WARN([Unsupported CPU: $host_cpu! Try x86_64, i686, mips, powerpc, armv7a, or aarch64])]
 )
 
 ## The following allows like systems to share settings. This is not meant to
