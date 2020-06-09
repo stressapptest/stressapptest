@@ -92,6 +92,13 @@ timestamp=$(date)
 AC_MSG_CHECKING([current timestamp])
 AC_MSG_RESULT([$timestamp])
 
+if test -n "$SOURCE_DATE_EPOCH"
+then
+  timestamp=$(date -u -d "@$SOURCE_DATE_EPOCH" 2>/dev/null || date -u -r "$SOURCE_DATE_EPOCH" 2>/dev/null || date -u)
+  username=reproducible
+  hostname=reproducible
+fi
+
 AC_DEFINE_UNQUOTED([STRESSAPPTEST_TIMESTAMP],
                    "$username @ $hostname on $timestamp",
                    [Timestamp when ./configure was executed])
