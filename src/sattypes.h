@@ -236,6 +236,12 @@ inline void cpuid(
 #endif
 }
 
+inline int64 sat_get_time_us() {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return ts.tv_sec * 1000000ULL + ts.tv_nsec/1000ULL;
+}
+
 // Define handy constants here
 static const int kTicksPerSec = 100;
 static const int kMegabyte = (1024LL*1024LL);

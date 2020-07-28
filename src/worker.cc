@@ -2517,8 +2517,7 @@ uint64 CpuCacheCoherencyThread::SimpleRandom(uint64 seed) {
 bool CpuCacheCoherencyThread::Work() {
   logprintf(9, "Log: Starting the Cache Coherency thread %d\n",
             cc_thread_num_);
-  uint64 time_start, time_end;
-  struct timeval tv;
+  int64 time_start, time_end;
 
   // Use a slightly more robust random number for the initial
   // value, so the random sequences from the simple generator will
@@ -2533,8 +2532,7 @@ bool CpuCacheCoherencyThread::Work() {
   r |= static_cast<uint64>(rand()) << 32;  // NOLINT
 #endif
 
-  gettimeofday(&tv, NULL);  // Get the timestamp before increments.
-  time_start = tv.tv_sec * 1000000ULL + tv.tv_usec;
+  time_start = sat_get_time_us();
 
   uint64 total_inc = 0;  // Total increments done by the thread.
   while (IsReadyToRun()) {
@@ -2588,10 +2586,9 @@ bool CpuCacheCoherencyThread::Work() {
                 cc_global_num, cc_inc_count_);
     }
   }
-  gettimeofday(&tv, NULL);  // Get the timestamp at the end.
-  time_end = tv.tv_sec * 1000000ULL + tv.tv_usec;
+  time_end = sat_get_time_us();
 
-  uint64 us_elapsed = time_end - time_start;
+  int64 us_elapsed = time_end - time_start;
   // inc_rate is the no. of increments per second.
   double inc_rate = total_inc * 1e6 / us_elapsed;
 
@@ -2842,9 +2839,7 @@ bool DiskThread::CloseDevice(int fd) {
 
 // Return the time in microseconds.
 int64 DiskThread::GetTime() {
-  struct timeval tv;
-  gettimeofday(&tv, NULL);
-  return tv.tv_sec * 1000000 + tv.tv_usec;
+  return sat_get_time_us();
 }
 
 // Do randomized reads and (possibly) writes on a device.

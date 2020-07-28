@@ -235,13 +235,11 @@ class WorkerThread {
   virtual bool Work();
 
   // Starts per-WorkerThread timer.
-  void StartThreadTimer() {gettimeofday(&start_time_, NULL);}
+  void StartThreadTimer() {start_time_ = sat_get_time_us();}
   // Reads current timer value and returns run duration without recording it.
   int64 ReadThreadTimer() {
-    struct timeval end_time_;
-    gettimeofday(&end_time_, NULL);
-    return (end_time_.tv_sec - start_time_.tv_sec)*1000000ULL +
-      (end_time_.tv_usec - start_time_.tv_usec);
+    int64 end_time_ = sat_get_time_us();
+    return end_time_ - start_time_;
   }
   // Stops per-WorkerThread timer and records thread run duration.
   // Start/Stop ThreadTimer repetitively has cumulative effect, ie the timer
@@ -384,7 +382,7 @@ class WorkerThread {
   bool tag_mode_;                   // Tag cachelines with vaddr.
 
   // Thread timing variables.
-  struct timeval start_time_;        // Worker thread start time.
+  int64 start_time_;                 // Worker thread start time.
   volatile int64 runduration_usec_;  // Worker run duration in u-seconds.
 
   // Function passed to pthread_create.
