@@ -139,9 +139,11 @@ class WorkerStatus {
 
   void WaitOnPauseBarrier() {
 #ifdef HAVE_PTHREAD_BARRIERS
+    pthread_rwlock_rdlock(&pause_rwlock_);
     int error = pthread_barrier_wait(&pause_barrier_);
     if (error != PTHREAD_BARRIER_SERIAL_THREAD)
       sat_assert(error == 0);
+    pthread_rwlock_unlock(&pause_rwlock_);
 #endif
   }
 
@@ -188,8 +190,8 @@ class WorkerStatus {
   Status status_;
 
 #ifdef HAVE_PTHREAD_BARRIERS
-  // Guaranteed to not be in use when (status_ != PAUSE).
   pthread_barrier_t pause_barrier_;
+  pthread_rwlock_t pause_rwlock_;  // Guards pause_barrier_
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(WorkerStatus);

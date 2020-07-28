@@ -130,11 +130,21 @@ static void *ThreadSpawnerGeneric(void *ptr) {
 
 void WorkerStatus::Initialize() {
   sat_assert(0 == pthread_mutex_init(&num_workers_mutex_, NULL));
-  sat_assert(0 == pthread_rwlock_init(&status_rwlock_, NULL));
+
+  pthread_rwlockattr_t attrs;
+  sat_assert(0 == pthread_rwlockattr_init(&attrs));
+  // Avoid writer lock starvation.
+  sat_assert(0 == pthread_rwlockattr_setkind_np(
+                      &attrs, PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP));
+  sat_assert(0 == pthread_rwlock_init(&status_rwlock_, &attrs));
+
 #ifdef HAVE_PTHREAD_BARRIERS
   sat_assert(0 == pthread_barrier_init(&pause_barrier_, NULL,
                                        num_workers_ + 1));
+  sat_assert(0 == pthread_rwlock_init(&pause_rwlock_, &attrs));
 #endif
+
+  sat_assert(0 == pthread_rwlockattr_destroy(&attrs));
 }
 
 void WorkerStatus::Destroy() {
