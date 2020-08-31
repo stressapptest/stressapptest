@@ -111,7 +111,6 @@ bool OsLayer::Initialize() {
     num_cpus_per_node_ = num_cpus_ / num_nodes_;
   }
   logprintf(5, "Log: %d nodes, %d cpus.\n", num_nodes_, num_cpus_);
-  sat_assert(CPU_SETSIZE >= num_cpus_);
   cpu_sets_.resize(num_nodes_);
   cpu_sets_valid_.resize(num_nodes_);
   // Create error diagnoser.
