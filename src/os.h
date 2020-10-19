@@ -19,6 +19,7 @@
 #include <dirent.h>
 #include <unistd.h>
 #include <sys/syscall.h>
+#include <stdint.h>
 
 #include <string>
 #include <list>
