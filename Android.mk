@@ -17,8 +17,8 @@ LOCAL_SRC_FILES := \
 	src/sat_factory.cc \
 	src/worker.cc
 
-# just build a 32b version, even on 64b hosts
-LOCAL_MULTILIB := 32
+# Build 64 bit by default
+# LOCAL_MULTILIB := 32
 LOCAL_MODULE:= stressapptest
 LOCAL_MODULE_TAGS := optional
 
