@@ -112,6 +112,8 @@ AS_IF([test x"$enable_default_optimizations" != xno], [
     CXXFLAGS="$CXXFLAGS -O3 -funroll-all-loops  -funroll-loops -DNDEBUG"
 ])
 
+AC_SYS_LARGEFILE
+
 # Checks for header files.
 AC_HEADER_DIRENT
 AC_HEADER_STDC
@@ -148,8 +150,6 @@ AC_FUNC_STRERROR_R
 AC_FUNC_VPRINTF
 AC_CHECK_FUNCS([ftruncate gettimeofday memset munmap select socket strtol strtoull])
 AC_CHECK_FUNCS([mmap64 posix_memalign rand_r sched_getaffinity])
-
-AC_SYS_LARGEFILE
 
 AC_CONFIG_FILES([Makefile src/Makefile])
 AC_OUTPUT
