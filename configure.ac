@@ -149,5 +149,7 @@ AC_FUNC_VPRINTF
 AC_CHECK_FUNCS([ftruncate gettimeofday memset munmap select socket strtol strtoull])
 AC_CHECK_FUNCS([mmap64 posix_memalign rand_r sched_getaffinity])
 
+AC_SYS_LARGEFILE
+
 AC_CONFIG_FILES([Makefile src/Makefile])
 AC_OUTPUT
