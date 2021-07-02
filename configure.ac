@@ -112,6 +112,8 @@ AS_IF([test x"$enable_default_optimizations" != xno], [
     CXXFLAGS="$CXXFLAGS -O3 -funroll-all-loops  -funroll-loops -DNDEBUG"
 ])
 
+AC_SYS_LARGEFILE
+
 # Checks for header files.
 AC_HEADER_DIRENT
 AC_HEADER_STDC
