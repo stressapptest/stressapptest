@@ -1314,47 +1314,48 @@ int WorkerThread::CrcCopyPage(struct page_entry *dstpe,
 
 // Invert a block of memory quickly, traversing downwards.
 int InvertThread::InvertPageDown(struct page_entry *srcpe) {
+  const int invert_flush_interval = kCacheLineSize / sizeof(unsigned int);
   const int blocksize = 4096;
   const int blockwords = blocksize / wordsize_;
   int blocks = sat_->page_length() / blocksize;
 
   // Base addresses for memory copy
-  unsigned int *sourcemembase = static_cast<unsigned int *>(srcpe->addr);
+  unsigned int* iter = static_cast<unsigned int *>(srcpe->addr) + (blocks * blockwords);
+  unsigned int* rend = static_cast<unsigned int *>(srcpe->addr);
 
-  for (int currentblock = blocks-1; currentblock >= 0; currentblock--) {
-    unsigned int *sourcemem = sourcemembase + currentblock * blockwords;
-    for (int i = blockwords - 32; i >= 0; i -= 32) {
-      for (int index = i + 31; index >= i; --index) {
-        unsigned int actual = sourcemem[index];
-        sourcemem[index] = ~actual;
-      }
-      OsLayer::FastFlush(&sourcemem[i]);
+  OsLayer::FastFlushSync();
+  while(iter != rend) {
+    for(int i = 0; i < invert_flush_interval; ++i) {
+      --iter;
+      *iter = ~(*iter);
     }
+    OsLayer::FastFlushHint(iter);
   }
-
+  OsLayer::FastFlushSync();
   srcpe->lastcpu = sched_getcpu();
   return 0;
 }
 
 // Invert a block of memory, traversing upwards.
 int InvertThread::InvertPageUp(struct page_entry *srcpe) {
+  const int invert_flush_interval = kCacheLineSize / sizeof(unsigned int);
   const int blocksize = 4096;
   const int blockwords = blocksize / wordsize_;
   int blocks = sat_->page_length() / blocksize;
 
   // Base addresses for memory copy
-  unsigned int *sourcemembase = static_cast<unsigned int *>(srcpe->addr);
+  unsigned int* iter = static_cast<unsigned int *>(srcpe->addr);
+  unsigned int* end = static_cast<unsigned int *>(srcpe->addr) + (blocks * blockwords);
 
-  for (int currentblock = 0; currentblock < blocks; currentblock++) {
-    unsigned int *sourcemem = sourcemembase + currentblock * blockwords;
-    for (int i = 0; i < blockwords; i += 32) {
-      for (int index = i; index <= i + 31; ++index) {
-        unsigned int actual = sourcemem[index];
-        sourcemem[index] = ~actual;
-      }
-      OsLayer::FastFlush(&sourcemem[i]);
+  OsLayer::FastFlushSync();
+  while(iter != end) {
+    for(int i = 0; i < invert_flush_interval; ++i) {
+      *iter = ~(*iter);
+      ++iter;
     }
+    OsLayer::FastFlushHint(iter - invert_flush_interval);
   }
+  OsLayer::FastFlushSync();
 
   srcpe->lastcpu = sched_getcpu();
   return 0;
