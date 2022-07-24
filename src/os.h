@@ -20,9 +20,6 @@
 #include <unistd.h>
 #include <sys/syscall.h>
 #include <stdint.h>
-#if defined(STRESSAPPTEST_CPU_X86_64) || defined(STRESSAPPTEST_CPU_I686)
-#include <immintrin.h>
-#endif
 
 #include <string>
 #include <list>
@@ -34,6 +31,10 @@
 #include "adler32memcpy.h"  // NOLINT
 #include "sattypes.h"       // NOLINT
 #include "clock.h"          // NOLINT
+
+#if defined(STRESSAPPTEST_CPU_X86_64) || defined(STRESSAPPTEST_CPU_I686)
+#include <immintrin.h>
+#endif
 
 const char kPagemapPath[] = "/proc/self/pagemap";
 
