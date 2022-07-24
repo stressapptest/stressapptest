@@ -34,6 +34,9 @@
 
 #if defined(STRESSAPPTEST_CPU_X86_64) || defined(STRESSAPPTEST_CPU_I686)
 #include <immintrin.h>
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
 #endif
 
 const char kPagemapPath[] = "/proc/self/pagemap";
@@ -276,7 +279,7 @@ class OsLayer {
 
     tsc = (static_cast<uint64>(tbu) << 32) | static_cast<uint64>(tbl);
 #elif defined(STRESSAPPTEST_CPU_X86_64) || defined(STRESSAPPTEST_CPU_I686)
-    tsc = _rdtsc();
+    tsc = __rdtsc();
 #elif defined(STRESSAPPTEST_CPU_MIPS)
     __asm __volatile("rdhwr  %0, $2\n" : "=r" (tsc));
 #elif defined(STRESSAPPTEST_CPU_ARMV7A)
