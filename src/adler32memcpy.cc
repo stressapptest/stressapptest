@@ -399,7 +399,18 @@ bool AdlerMemcpyAsm(uint64 *dstmem64, uint64 *srcmem64,
   // that there is no problem with memory this just mean that data was copied
   // from src to dst and checksum was calculated successfully).
   return true;
-#elif defined(STRESSAPPTEST_CPU_ARMV7A) && defined(__ARM_NEON__)
+#elif defined(STRESSAPPTEST_CPU_AARCH64) || defined(STRESSAPPTEST_CPU_ARMV7A) && defined(__ARM_NEON__)
+#if defined(STRESSAPPTEST_CPU_AARCH64)
+#define src_r "x3"
+#define dst_r "x4"
+#define blocks_r "x5"
+#define crc_r "x6"
+#else
+#define src_r "r3"
+#define dst_r "r4"
+#define blocks_r "r5"
+#define crc_r "r6"
+#endif
   // Elements 0 to 3 are used for holding checksum terms a1, a2,
   // b1, b2 respectively. These elements are filled by asm code.
   // Checksum is seeded with the null checksum.
@@ -417,11 +428,103 @@ bool AdlerMemcpyAsm(uint64 *dstmem64, uint64 *srcmem64,
   uint64 *dst = dstmem64;
   uint64 *src = srcmem64;
 
-  #define src_r "r3"
-  #define dst_r "r4"
-  #define blocks_r "r5"
-  #define crc_r "r6"
+#if defined(STRESSAPPTEST_CPU_AARCH64)
+  asm volatile (
+      "mov " src_r ", %[src];\n"
+      "mov " dst_r ", %[dst];\n"
+      "mov " crc_r ", %[crc];\n"
+      "mov " blocks_r ", %[blocks];\n"
 
+      // Loop over block count.
+      "cmp " blocks_r ", #0;\n"   // Compare counter to zero.
+      "ble END;\n"
+
+
+      // Preload upcoming cacheline.
+      "prfm pldl1strm, [" src_r ", #0 ];\n"
+      "prfm pldl1strm, [" src_r ", #64 ];\n"
+      "prfm pldl1strm, [" src_r ", #128 ];\n"
+      "prfm pldl1strm, [" src_r ", #192];\n"
+      "prfm pldl1strm, [" src_r ", #256];\n"
+
+      // Init checksum
+      "ld1.2d {v0}, [" crc_r "];\n"
+      "dup.2d v1, xzr;\n"
+
+      // Start of the loop which copies 64 bytes from source to dst each time.
+      "TOP:\n"
+
+      // Preload some stuff.
+      "prfm pldl1strm, [" src_r ", #320];\n"
+      "prfm pldl1strm, [" src_r ", #384];\n"
+
+      // Make 3 moves each of 16 bytes from srcmem to qX registers.
+      // We are using 2 words out of 4 words in each qX register,
+      // word index 0 and word index 2. We'll swizzle them in a bit.
+      // Copy it.
+      "ld1.2d {v8, v9, v10, v11}, [" src_r "], #64;\n"
+      "st1.2d {v8, v9, v10, v11}, [" dst_r "], #64;\n"
+
+      // Arrange it.
+      "dup.4s v12, wzr; \n"
+      "dup.4s v13, wzr; \n"
+      "dup.4s v14, wzr; \n"
+      "dup.4s v15, wzr; \n"
+      "dup.4s v16, wzr; \n"
+      // This exchenges words 1,3 in the filled registers with
+      // words 0,2 in the empty registers.
+      "trn1 v12.4s, v8.4s, v12.4s; \n"
+      "trn2 v8.4s, v8.4s, v16.4s; \n"
+      "trn1 v13.4s, v9.4s, v13.4s; \n"
+      "trn2 v9.4s, v9.4s, v16.4s; \n"
+      "trn1 v14.4s, v10.4s, v14.4s; \n"
+      "trn2 v10.4s, v10.4s, v16.4s; \n"
+      "trn1 v15.4s, v11.4s, v15.4s; \n"
+      "trn2 v11.4s, v11.4s, v16.4s; \n"
+
+      // Sum into v0, then into v1.
+      // Repeat this for v8 - v11 and their counterparts.
+      // Overflow can occur only if there are more
+      // than 2^16 additions => more than 2^17 words => more than 2^19 bytes so
+      // if size_in_bytes > 2^19 than overflow occurs.
+      "add.2d  v0, v0, v12;\n"
+      "add.2d  v1, v1, v0;\n"
+      "add.2d  v0, v0, v8;\n"
+      "add.2d  v1, v1, v0;\n"
+      "add.2d  v0, v0, v13;\n"
+      "add.2d  v1, v1, v0;\n"
+      "add.2d  v0, v0, v9;\n"
+      "add.2d  v1, v1, v0;\n"
+
+      "add.2d  v0, v0, v14;\n"
+      "add.2d  v1, v1, v0;\n"
+      "add.2d  v0, v0, v10;\n"
+      "add.2d  v1, v1, v0;\n"
+      "add.2d  v0, v0, v15;\n"
+      "add.2d  v1, v1, v0;\n"
+      "add.2d  v0, v0, v11;\n"
+      "add.2d  v1, v1, v0;\n"
+
+      // Increment counter and loop.
+      "sub " blocks_r ", " blocks_r ", #1;\n"
+      "cmp " blocks_r ", #0;\n"   // Compare counter to zero.
+      "bgt TOP;\n"
+
+
+      "END:\n"
+      // Report checksum values A and B (both right now are two concatenated
+      // 64 bit numbers and have to be converted to 64 bit numbers)
+      // seems like Adler128 (since size of each part is 4 byte rather than
+      // 1 byte).
+      "st1.2d {v0, v1}, [" crc_r "];   \n"
+
+      // Output registers.
+      :
+      // Input registers.
+      : [src] "r"(src), [dst] "r"(dst), [blocks] "r"(blocks) , [crc] "r"(checksum_arr)
+      : "memory", "cc", src_r, dst_r, blocks_r, crc_r, "v0","v1","v8","v9","v10","v11","v12","v13","v14","v15","v16"
+  );  // asm.
+#else
   asm volatile (
       "mov " src_r ", %[src];	 	\n"
       "mov " dst_r ", %[dst]; 		\n"
@@ -505,6 +608,7 @@ bool AdlerMemcpyAsm(uint64 *dstmem64, uint64 *srcmem64,
       : [src] "r"(src), [dst] "r"(dst), [blocks] "r"(blocks) , [crc] "r"(checksum_arr)
       : "memory", "cc", "r3", "r4", "r5", "r6", "q0", "q1", "q8","q9","q10", "q11", "q12","q13","q14","q15"
   );  // asm.
+#endif
 
   if (checksum != NULL) {
     checksum->Set(checksum_arr[0], checksum_arr[1],
