@@ -89,7 +89,7 @@ namespace {
     if (retval == -1)
       return false;
     if (errmsg != buf) {
-      strncpy(buf, errmsg, len);
+      strncpy(buf, errmsg, len - 1);
       buf[len - 1] = 0;
     }
     return true;
@@ -2049,7 +2049,7 @@ bool NetworkSlaveThread::IsNetworkStopSet() {
 
 // Set ip name to use for Network IO.
 void NetworkThread::SetIP(const char *ipaddr_init) {
-  strncpy(ipaddr_, ipaddr_init, 256);
+  strncpy(ipaddr_, ipaddr_init, 255);
 }
 
 // Create a socket.
