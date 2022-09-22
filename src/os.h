@@ -32,6 +32,13 @@
 #include "sattypes.h"       // NOLINT
 #include "clock.h"          // NOLINT
 
+#if defined(STRESSAPPTEST_CPU_X86_64) || defined(STRESSAPPTEST_CPU_I686)
+#include <immintrin.h>
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+#endif
+
 const char kPagemapPath[] = "/proc/self/pagemap";
 
 struct PCIDevice {
@@ -151,9 +158,9 @@ class OsLayer {
     // to be ordered by any other fencing, serializing or other CLFLUSH
     // instruction. For example, software can use an MFENCE instruction to
     // insure that previous stores are included in the write-back.
-    asm volatile("mfence");
-    asm volatile("clflush (%0)" : : "r" (vaddr));
-    asm volatile("mfence");
+    _mm_mfence();
+    _mm_clflush(vaddr);
+    _mm_mfence();
 #elif defined(STRESSAPPTEST_CPU_MIPS)
     syscall(__NR_cacheflush, vaddr, 32, 0);
 #elif defined(STRESSAPPTEST_CPU_ARMV7A)
@@ -190,11 +197,11 @@ class OsLayer {
     // to be ordered by any other fencing, serializing or other CLFLUSH
     // instruction. For example, software can use an MFENCE instruction to
     // insure that previous stores are included in the write-back.
-    asm volatile("mfence");
+    _mm_mfence();
     while (*vaddrs) {
-      asm volatile("clflush (%0)" : : "r" (*vaddrs++));
+      _mm_clflush(*vaddrs++);
     }
-    asm volatile("mfence");
+    _mm_mfence();
 #elif defined(STRESSAPPTEST_CPU_MIPS) || defined(STRESSAPPTEST_CPU_ARMV7A) || defined(STRESSAPPTEST_CPU_AARCH64)
     while (*vaddrs) {
       FastFlush(*vaddrs++);
@@ -219,7 +226,7 @@ class OsLayer {
     // to be ordered by any other fencing, serializing or other CLFLUSH
     // instruction. For example, software can use an MFENCE instruction to
     // insure that previous stores are included in the write-back.
-    asm volatile("clflush (%0)" : : "r" (vaddr));
+    _mm_clflush(vaddr);
 #elif defined(STRESSAPPTEST_CPU_MIPS) || defined(STRESSAPPTEST_CPU_ARMV7A) || defined(STRESSAPPTEST_CPU_AARCH64)
     FastFlush(vaddr);
 #else
@@ -244,7 +251,7 @@ class OsLayer {
     // to be ordered by any other fencing, serializing or other CLFLUSH
     // instruction. For example, software can use an MFENCE instruction to
     // insure that previous stores are included in the write-back.
-    asm volatile("mfence");
+    _mm_mfence();
 #elif defined(STRESSAPPTEST_CPU_MIPS) || defined(STRESSAPPTEST_CPU_ARMV7A) || defined(STRESSAPPTEST_CPU_AARCH64)
     // This is a NOP, FastFlushHint() always does a full flush, so there's
     // nothing to do for FastFlushSync().
@@ -272,9 +279,7 @@ class OsLayer {
 
     tsc = (static_cast<uint64>(tbu) << 32) | static_cast<uint64>(tbl);
 #elif defined(STRESSAPPTEST_CPU_X86_64) || defined(STRESSAPPTEST_CPU_I686)
-    datacast_t data;
-    __asm __volatile("rdtsc" : "=a" (data.l32.l), "=d"(data.l32.h));
-    tsc = data.l64;
+    tsc = __rdtsc();
 #elif defined(STRESSAPPTEST_CPU_MIPS)
     __asm __volatile("rdhwr  %0, $2\n" : "=r" (tsc));
 #elif defined(STRESSAPPTEST_CPU_ARMV7A)
