@@ -208,7 +208,7 @@ void OsLayer::GetFeatures() {
 #elif defined(STRESSAPPTEST_CPU_MIPS)
   // All MIPS implementations have cache flush instructions.
   has_clflush_ = true;
-#elif defined(STRESSAPPTEST_CPU_ARMV7A)
+#elif defined(STRESSAPPTEST_CPU_ARMV7A) || defined(STRESSAPPTEST_CPU_AARCH64)
   // TODO(nsanders): add detect from /proc/cpuinfo or /proc/self/auxv.
   // For now assume neon and don't run -W if you don't have it.
   has_vector_ = true; // NEON.
