@@ -452,10 +452,13 @@ bool WorkerThread::BindToCpus(const cpu_set_t *thread_mask) {
     return false;
   }
 #ifdef HAVE_SCHED_GETAFFINITY
-  return (sched_setaffinity(gettid(), sizeof(*thread_mask), thread_mask) == 0);
-#else
-  return 0;
+  if (sat_->use_affinity()) {
+    return (sched_setaffinity(gettid(), sizeof(*thread_mask), thread_mask) == 0);
+  } else {
+    logprintf(11, "Log: Skipping CPU affinity set.\n");
+  }
 #endif
+  return true;
 }
 
 
