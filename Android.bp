@@ -1,0 +1,75 @@
+package {
+    default_applicable_licenses: ["external_stressapptest_license"],
+}
+// Added automatically by a large-scale-change that took the approach of
+// 'apply every license found to every target'. While this makes sure we respect
+// every license restriction, it may not be entirely correct.
+//
+// e.g. GPL in an MIT project might only apply to the contrib/ directory.
+//
+// Please consider splitting the single license below into multiple licenses,
+// taking care not to lose any license_kind information, and overriding the
+// default license using the 'licenses: [...]' property on targets as needed.
+//
+// For unused files, consider creating a 'filegroup' with "//visibility:private"
+// to attach the license to, and including a comment whether the files may be
+// used in the current project.
+//
+// large-scale-change included anything that looked like it might be a license
+// text as a license_text. e.g. LICENSE, NOTICE, COPYING etc.
+//
+// Please consider removing redundant or irrelevant files from 'license_text:'.
+// http://go/android-license-faq
+license {
+    name: "external_stressapptest_license",
+    visibility: [":__subpackages__"],
+    license_kinds: [
+        "SPDX-license-identifier-Apache-2.0",
+        "SPDX-license-identifier-MIT",
+        "legacy_notice",
+    ],
+    license_text: [
+        "COPYING",
+        "NOTICE",
+    ],
+}
+cc_binary {
+    name: "stressapptest",
+    srcs: [
+        "src/main.cc",
+        "src/adler32memcpy.cc",
+        "src/disk_blocks.cc",
+        "src/error_diag.cc",
+        "src/finelock_queue.cc",
+        "src/logger.cc",
+        "src/os.cc",
+        "src/os_factory.cc",
+        "src/pattern.cc",
+        "src/queue.cc",
+        "src/sat.cc",
+        "src/sat_factory.cc",
+        "src/worker.cc",
+    ],
+    arch: {
+        arm: { cflags: ["-DSTRESSAPPTEST_CPU_ARMV7A"] },
+        arm64: { cflags: ["-DSTRESSAPPTEST_CPU_AARCH64"] },
+        x86: {
+            enabled: false,
+        },
+        x86_64: {
+            enabled: false,
+        },
+    },
+    cflags: [
+        "-DHAVE_CONFIG_H",
+        "-DANDROID",
+        "-DNDEBUG",
+        "-UDEBUG",
+        "-DCHECKOPTS",
+        "-Wall",
+        "-Werror",
+        "-Wno-unused-parameter",
+        "-Wno-#warnings",
+        "-Wno-implicit-fallthrough",
+    ],
+}
