@@ -1525,8 +1525,10 @@ bool CopyThread::Work() {
   bool result = true;
   int64 loops = 0;
 
-  logprintf(9, "Log: Starting copy thread %d: cpu %s, mem %x\n",
-            thread_num_, cpuset_format(&cpu_mask_).c_str(), tag_);
+  logprintf(9, "Log: Starting copy thread %d: cpu %s, "
+            "mem %x, warm: %d, has_vector: %d\n",
+            thread_num_, cpuset_format(&cpu_mask_).c_str(), tag_,
+            sat_->warm(), os_->has_vector());
 
   while (IsReadyToRun()) {
     // Pop the needed pages.

@@ -355,6 +355,7 @@ class OsLayer {
   virtual bool AdlerMemcpyWarm(uint64 *dstmem, uint64 *srcmem,
                                unsigned int size_in_bytes,
                                AdlerChecksum *checksum);
+  bool has_vector() const { return has_vector_; }
 
   // Store a callback to use to print
   // app-specific info about the last error location.

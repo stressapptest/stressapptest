@@ -403,7 +403,7 @@ bool AdlerMemcpyAsm(uint64 *dstmem64, uint64 *srcmem64,
 #if defined(STRESSAPPTEST_CPU_AARCH64)
 #define src_r "x3"
 #define dst_r "x4"
-#define blocks_r "x5"
+#define blocks_r "w5"
 #define crc_r "x6"
 #else
 #define src_r "r3"
@@ -433,7 +433,7 @@ bool AdlerMemcpyAsm(uint64 *dstmem64, uint64 *srcmem64,
       "mov " src_r ", %[src];\n"
       "mov " dst_r ", %[dst];\n"
       "mov " crc_r ", %[crc];\n"
-      "mov " blocks_r ", %[blocks];\n"
+      "mov " blocks_r ", %w[blocks];\n"
 
       // Loop over block count.
       "cmp " blocks_r ", #0;\n"   // Compare counter to zero.
@@ -448,8 +448,8 @@ bool AdlerMemcpyAsm(uint64 *dstmem64, uint64 *srcmem64,
       "prfm pldl1strm, [" src_r ", #256];\n"
 
       // Init checksum
-      "ld1.2d {v0}, [" crc_r "];\n"
-      "dup.2d v1, xzr;\n"
+      "ld1 {v0.2d}, [" crc_r "];\n"
+      "dup v1.2d, xzr;\n"
 
       // Start of the loop which copies 64 bytes from source to dst each time.
       "TOP:\n"
@@ -462,15 +462,15 @@ bool AdlerMemcpyAsm(uint64 *dstmem64, uint64 *srcmem64,
       // We are using 2 words out of 4 words in each qX register,
       // word index 0 and word index 2. We'll swizzle them in a bit.
       // Copy it.
-      "ld1.2d {v8, v9, v10, v11}, [" src_r "], #64;\n"
-      "st1.2d {v8, v9, v10, v11}, [" dst_r "], #64;\n"
+      "ld1 {v8.2d, v9.2d, v10.2d, v11.2d}, [" src_r "], #64;\n"
+      "st1 {v8.2d, v9.2d, v10.2d, v11.2d}, [" dst_r "], #64;\n"
 
       // Arrange it.
-      "dup.4s v12, wzr; \n"
-      "dup.4s v13, wzr; \n"
-      "dup.4s v14, wzr; \n"
-      "dup.4s v15, wzr; \n"
-      "dup.4s v16, wzr; \n"
+      "dup v12.4s, wzr; \n"
+      "dup v13.4s, wzr; \n"
+      "dup v14.4s, wzr; \n"
+      "dup v15.4s, wzr; \n"
+      "dup v16.4s, wzr; \n"
       // This exchenges words 1,3 in the filled registers with
       // words 0,2 in the empty registers.
       "trn1 v12.4s, v8.4s, v12.4s; \n"
@@ -487,23 +487,23 @@ bool AdlerMemcpyAsm(uint64 *dstmem64, uint64 *srcmem64,
       // Overflow can occur only if there are more
       // than 2^16 additions => more than 2^17 words => more than 2^19 bytes so
       // if size_in_bytes > 2^19 than overflow occurs.
-      "add.2d  v0, v0, v12;\n"
-      "add.2d  v1, v1, v0;\n"
-      "add.2d  v0, v0, v8;\n"
-      "add.2d  v1, v1, v0;\n"
-      "add.2d  v0, v0, v13;\n"
-      "add.2d  v1, v1, v0;\n"
-      "add.2d  v0, v0, v9;\n"
-      "add.2d  v1, v1, v0;\n"
+      "add v0.2d, v0.2d, v12.2d;\n"
+      "add v1.2d, v1.2d, v0.2d;\n"
+      "add v0.2d, v0.2d, v8.2d;\n"
+      "add v1.2d, v1.2d, v0.2d;\n"
+      "add v0.2d, v0.2d, v13.2d;\n"
+      "add v1.2d, v1.2d, v0.2d;\n"
+      "add v0.2d, v0.2d, v9.2d;\n"
+      "add v1.2d, v1.2d, v0.2d;\n"
 
-      "add.2d  v0, v0, v14;\n"
-      "add.2d  v1, v1, v0;\n"
-      "add.2d  v0, v0, v10;\n"
-      "add.2d  v1, v1, v0;\n"
-      "add.2d  v0, v0, v15;\n"
-      "add.2d  v1, v1, v0;\n"
-      "add.2d  v0, v0, v11;\n"
-      "add.2d  v1, v1, v0;\n"
+      "add v0.2d, v0.2d, v14.2d;\n"
+      "add v1.2d, v1.2d, v0.2d;\n"
+      "add v0.2d, v0.2d, v10.2d;\n"
+      "add v1.2d, v1.2d, v0.2d;\n"
+      "add v0.2d, v0.2d, v15.2d;\n"
+      "add v1.2d, v1.2d, v0.2d;\n"
+      "add v0.2d, v0.2d, v11.2d;\n"
+      "add v1.2d, v1.2d, v0.2d;\n"
 
       // Increment counter and loop.
       "sub " blocks_r ", " blocks_r ", #1;\n"
@@ -516,7 +516,7 @@ bool AdlerMemcpyAsm(uint64 *dstmem64, uint64 *srcmem64,
       // 64 bit numbers and have to be converted to 64 bit numbers)
       // seems like Adler128 (since size of each part is 4 byte rather than
       // 1 byte).
-      "st1.2d {v0, v1}, [" crc_r "];   \n"
+      "st1 {v0.2d, v1.2d}, [" crc_r "];   \n"
 
       // Output registers.
       :

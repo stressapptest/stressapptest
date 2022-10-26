@@ -212,7 +212,6 @@ void OsLayer::GetFeatures() {
   // TODO(nsanders): add detect from /proc/cpuinfo or /proc/self/auxv.
   // For now assume neon and don't run -W if you don't have it.
   has_vector_ = true; // NEON.
-#warning "Unsupported CPU type ARMV7A: unable to determine feature set."
 #else
 #warning "Unsupported CPU type: unable to determine feature set."
 #endif
