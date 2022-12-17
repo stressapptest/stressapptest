@@ -133,9 +133,11 @@ void WorkerStatus::Initialize() {
 
   pthread_rwlockattr_t attrs;
   sat_assert(0 == pthread_rwlockattr_init(&attrs));
+#ifdef HAVE_PTHREAD_RWLOCKATTR_SETKIND_NP
   // Avoid writer lock starvation.
   sat_assert(0 == pthread_rwlockattr_setkind_np(
                       &attrs, PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP));
+#endif
   sat_assert(0 == pthread_rwlock_init(&status_rwlock_, &attrs));
 
 #ifdef HAVE_PTHREAD_BARRIERS
