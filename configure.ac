@@ -11,7 +11,14 @@ else
   AC_MSG_NOTICE([Compiling with dynamically linked libraries.])
 fi
 
-AC_CANONICAL_HOST
+AC_ARG_WITH(cpu, [  --with-cpu            define host cpu])
+
+if test -z "$with_cpu"
+then
+  AC_CANONICAL_HOST
+else
+  host_cpu=$with_cpu
+fi
 # Checking for target cpu and setting custom configuration
 # for the different platforms
 AS_CASE(["$host_cpu"],
