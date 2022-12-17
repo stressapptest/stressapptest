@@ -1705,7 +1705,7 @@ bool FileThread::WritePages(int fd) {
   int strict = sat_->strict();
 
   // Start fresh at beginning of file for each batch of pages.
-  lseek64(fd, 0, SEEK_SET);
+  lseek(fd, 0, SEEK_SET);
   for (int i = 0; i < sat_->disk_pages(); i++) {
     struct page_entry src;
     if (!GetValidPage(&src))
@@ -1943,7 +1943,7 @@ bool FileThread::ReadPages(int fd) {
   bool result = true;
 
   // Read our data back out of the file, into it's new location.
-  lseek64(fd, 0, SEEK_SET);
+  lseek(fd, 0, SEEK_SET);
   for (int i = 0; i < sat_->disk_pages(); i++) {
     struct page_entry dst;
     if (!GetEmptyPage(&dst))
@@ -3153,7 +3153,7 @@ bool DiskThread::ValidateBlockOnDisk(int fd, BlockData *block) {
 
   // Read block from disk and time the read.  If it takes longer than the
   // threshold, complain.
-  if (lseek64(fd, address * kSectorSize, SEEK_SET) == -1) {
+  if (lseek(fd, address * kSectorSize, SEEK_SET) == -1) {
     logprintf(0, "Process Error: Unable to seek to sector %lld in "
               "DiskThread::ValidateSectorsOnDisk on disk %s "
               "(thread %d).\n", address, device_name_.c_str(), thread_num_);
