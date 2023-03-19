@@ -34,6 +34,7 @@
 
 #if defined(STRESSAPPTEST_CPU_X86_64) || defined(STRESSAPPTEST_CPU_I686)
 #include <immintrin.h>
+#include <x86intrin.h>
 #if defined(_MSC_VER)
 #include <intrin.h>
 #endif
