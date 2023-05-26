@@ -46,7 +46,11 @@ AS_CASE(["$host_cpu"],
     AC_DEFINE([STRESSAPPTEST_CPU_AARCH64],[],
               [Defined if the target CPU is aarch64])
     ],
-[AC_MSG_WARN([Unsupported CPU: $host_cpu! Try x86_64, i686, mips, powerpc, armv7a, or aarch64])]
+  [*loongarch*], [
+    AC_DEFINE([STRESSAPPTEST_CPU_LOONGARCH],[],
+              [Defined if the target CPU is LOONGARCH])
+    ], 
+[AC_MSG_WARN([Unsupported CPU: $host_cpu! Try x86_64, i686, mips, powerpc, armv7a, aarch64 or loongarch])]
 )
 
 ## The following allows like systems to share settings. This is not meant to
