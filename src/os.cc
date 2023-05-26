@@ -212,6 +212,8 @@ void OsLayer::GetFeatures() {
   // TODO(nsanders): add detect from /proc/cpuinfo or /proc/self/auxv.
   // For now assume neon and don't run -W if you don't have it.
   has_vector_ = true; // NEON.
+#elif defined(STRESSAPPTEST_CPU_LOONGARCH)
+  has_clflush_ = true;
 #else
 #warning "Unsupported CPU type: unable to determine feature set."
 #endif

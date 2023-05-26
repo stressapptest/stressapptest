@@ -233,6 +233,8 @@ inline void cpuid(
   return;
 #elif defined(STRESSAPPTEST_CPU_AARCH64)
   return;
+#elif defined(STRESSAPPTEST_CPU_LOONGARCH)
+  return;
 #else
 #warning "Unsupported CPU type."
 #endif
