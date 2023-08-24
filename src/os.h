@@ -21,6 +21,7 @@
 #include <sys/syscall.h>
 #include <stdint.h>
 
+#include <cstdint>
 #include <string>
 #include <list>
 #include <map>
