@@ -1,5 +1,5 @@
 AC_PREREQ(2.61)
-AC_INIT([stressapptest], [1.0.10_autoconf], [opensource@google.com])
+AC_INIT([stressapptest], [1.0.11_autoconf], [opensource@google.com])
 
 AC_ARG_WITH(static, [  --with-static            enable static linking])
 
