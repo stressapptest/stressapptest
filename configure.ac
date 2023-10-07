@@ -13,10 +13,10 @@ fi
 
 AC_ARG_WITH(cpu, [  --with-cpu            define host cpu])
 
-if test -z "$with_cpu"
+AC_CANONICAL_HOST
+
+if test -n "$with_cpu"
 then
-  AC_CANONICAL_HOST
-else
   host_cpu=$with_cpu
 fi
 # Checking for target cpu and setting custom configuration
