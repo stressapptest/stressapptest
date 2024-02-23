@@ -1908,9 +1908,15 @@ bool Sat::Run() {
   sigaddset(&new_blocked_signals, SIGTERM);
   sigset_t prev_blocked_signals;
   pthread_sigmask(SIG_BLOCK, &new_blocked_signals, &prev_blocked_signals);
+  // There is no sighandler_t in mac osx, we use sig_t to replace it.
+  // https://openconnect-devel.infradead.narkive.com/C4sO4ygh/error-building-ocserv-0-2-2
+#if defined(__linux__)
   sighandler_t prev_sigint_handler = signal(SIGINT, SatHandleBreak);
   sighandler_t prev_sigterm_handler = signal(SIGTERM, SatHandleBreak);
-
+#else
+  sig_t prev_sigint_handler = signal(SIGINT, SatHandleBreak);
+  sig_t prev_sigterm_handler = signal(SIGTERM, SatHandleBreak);
+#endif
   // Kick off all the worker threads.
   logprintf(12, "Log: Launching worker threads\n");
   InitializeThreads();
