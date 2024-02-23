@@ -38,11 +38,21 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <arpa/inet.h>
-#include <linux/unistd.h>  // for gettid
-
+#if defined(__linux__)
+#include <linux/unistd.h> // for gettid
+#endif
 // For size of block device
 #include <sys/ioctl.h>
+#if defined(__linux__)
 #include <linux/fs.h>
+#endif
+#if defined(__APPLE__)
+// There is no sched_getcpu() in mac osx
+// https://stackoverflow.com/questions/33745364/sched-getcpu-equivalent-for-os-x
+#include <cpuid.h>
+#endif
+#define CPUID(INFO, LEAF, SUBLEAF) __cpuid_count(LEAF, SUBLEAF, INFO[0], INFO[1], INFO[2], INFO[3])
+
 // For asynchronous I/O
 #ifdef HAVE_LIBAIO_H
 #include <libaio.h>
@@ -63,26 +73,53 @@
 #include "sattypes.h"    // NOLINT
 #include "worker.h"      // NOLINT
 
+// https://groups.google.com/g/comp.os.linux.development.system/c/8xwJyNXUcZk
+// https://opensource.apple.com/source/ntfs/ntfs-94/newfs/device.c
+#if !defined(O_LARGEFILE)
+#define O_LARGEFILE 0100000
+#endif
+#if !defined(BLKGETSIZE64)
+#define BLKGETSIZE64 _IOR(0x12, 114, size_t)
+#endif
+
 // Syscalls
 // Why ubuntu, do you hate gettid so bad?
 #if !defined(__NR_gettid)
-  #define __NR_gettid             224
+#define __NR_gettid 224
 #endif
 
+#if defined(__APPLE__)
+#include <pthread.h>
+#if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_12
+function macosx_syscall()
+{
+  uint64_t tid64;
+  pthread_threadid_np(NULL, &tid64);
+  pid_t tid = (pid_t)tid64;
+  return tid;
+}
+#endif
+
+#endif
+#if defined(__APPLE__) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_12
+#define gettid() macosx_syscall()
+#else
 #define gettid() syscall(__NR_gettid)
+#endif
 #if !defined(CPU_SETSIZE)
 _syscall3(int, sched_getaffinity, pid_t, pid,
-          unsigned int, len, cpu_set_t*, mask)
-_syscall3(int, sched_setaffinity, pid_t, pid,
-          unsigned int, len, cpu_set_t*, mask)
+          unsigned int, len, cpu_set_t *, mask)
+    _syscall3(int, sched_setaffinity, pid_t, pid,
+              unsigned int, len, cpu_set_t *, mask)
 #endif
 
-namespace {
+        namespace
+{
   // Work around the sad fact that there are two (gnu, xsi) incompatible
   // versions of strerror_r floating around google. Awesome.
   bool sat_strerror(int err, char *buf, int len) {
     buf[0] = 0;
-    char *errmsg = reinterpret_cast<char*>(strerror_r(err, buf, len));
+    char *errmsg = reinterpret_cast<char *>(strerror_r(err, buf, len));
     int retval = reinterpret_cast<int64>(errmsg);
     if (retval == 0)
       return true;
@@ -95,35 +132,57 @@ namespace {
     return true;
   }
 
-
   inline uint64 addr_to_tag(void *address) {
     return reinterpret_cast<uint64>(address);
   }
-}  // namespace
+} // namespace
 
 #if !defined(O_DIRECT)
 // Sometimes this isn't available.
 // Disregard if it's not defined.
-  #define O_DIRECT            0
+#define O_DIRECT 0
 #endif
 
 // A struct to hold captured errors, for later reporting.
 struct ErrorRecord {
-  uint64 actual;  // This is the actual value read.
-  uint64 reread;  // This is the actual value, reread.
-  uint64 expected;  // This is what it should have been.
-  uint64 *vaddr;  // This is where it was (or wasn't).
-  char *vbyteaddr;  // This is byte specific where the data was (or wasn't).
-  uint64 paddr;  // This is the bus address, if available.
-  uint64 *tagvaddr;  // This holds the tag value if this data was tagged.
-  uint64 tagpaddr;  // This holds the physical address corresponding to the tag.
-  uint32 lastcpu;  // This holds the CPU recorded as probably writing this data.
-  const char *patternname;  // This holds the pattern name of the expected data.
+  uint64 actual;           // This is the actual value read.
+  uint64 reread;           // This is the actual value, reread.
+  uint64 expected;         // This is what it should have been.
+  uint64 *vaddr;           // This is where it was (or wasn't).
+  char *vbyteaddr;         // This is byte specific where the data was (or wasn't).
+  uint64 paddr;            // This is the bus address, if available.
+  uint64 *tagvaddr;        // This holds the tag value if this data was tagged.
+  uint64 tagpaddr;         // This holds the physical address corresponding to the tag.
+  uint32 lastcpu;          // This holds the CPU recorded as probably writing this data.
+  const char *patternname; // This holds the pattern name of the expected data.
 };
+
+#if defined(__APPLE__)
+// This is a replacement for sched_getcpu() for mac osx.
+// There is no sched_getcpu() function in mac osx.
+// https://stackoverflow.com/questions/33745364/sched-getcpu-equivalent-for-os-x
+int sched_getcpu()
+{
+  uint32_t CPUInfo[4];
+  int cpu_num;
+  CPUID(CPUInfo, 1, 0); /* CPUInfo[1] is EBX, bits 24-31 are APIC ID */
+  if ((CPUInfo[3] & (1 << 9)) == 0)
+  {
+    cpu_num = -1; /* no APIC on chip */
+  }
+  else
+  {
+    cpu_num = (unsigned)CPUInfo[1] >> 24;
+  }
+  if (cpu_num < 0)
+    cpu_num = 0;
+  return cpu_num;
+}
+#endif
 
 // This is a helper function to create new threads with pthreads.
 static void *ThreadSpawnerGeneric(void *ptr) {
-  WorkerThread *worker = static_cast<WorkerThread*>(ptr);
+  WorkerThread *worker = static_cast<WorkerThread *>(ptr);
   worker->StartRoutine();
   return NULL;
 }
@@ -311,20 +370,22 @@ void WorkerThread::InitThread(int thread_num_init,
   tag_mode_ = sat_->tag_mode();
 }
 
-
 // Use pthreads to prioritize a system thread.
 bool WorkerThread::InitPriority() {
+  // sched_getcpu() is only for linux and we can use other codes to replace it.
+  // https://stackoverflow.com/questions/33745364/sched-getcpu-equivalent-for-os-x
+
   // This doesn't affect performance that much, and may not be too safe.
 
   bool ret = BindToCpus(&cpu_mask_);
   if (!ret)
     logprintf(11, "Log: Bind to %s failed.\n",
               cpuset_format(&cpu_mask_).c_str());
-
   logprintf(11, "Log: Thread %d running on core ID %d mask %s (%s).\n",
             thread_num_, sched_getcpu(),
             CurrentCpusFormat().c_str(),
             cpuset_format(&cpu_mask_).c_str());
+
 #if 0
   if (priority_ == High) {
     sched_param param;

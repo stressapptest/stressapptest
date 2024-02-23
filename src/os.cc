@@ -19,11 +19,18 @@
 // interfaces.
 
 #include "os.h"
-
+#include <sys/sysctl.h>
 #include <errno.h>
 #include <fcntl.h>
+#if defined(__linux__)
 #include <linux/types.h>
+#else
+#include "my_linux_types.h"
+#endif
+#include <sys/malloc.h>
+#if defined(__linux__)
 #include <malloc.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -413,9 +420,13 @@ int64 OsLayer::FindFreeMemSize() {
   int64 minsize = 0;
   if (totalmemsize_ > 0)
     return totalmemsize_;
-
-  int64 pages = sysconf(_SC_PHYS_PAGES);
-  int64 avpages = sysconf(_SC_AVPHYS_PAGES);
+  uint64_t mem;
+  size_t len = sizeof(mem);
+  sysctlbyname("hw.memsize", &mem, &len, NULL, 0);
+  // There is no defination about the symobl _SC_AVPHYS_PAGES in mac osx, therefore , I need to use the sysctlbyname to get the memeory size and length and convert it to physical pages.
+  int64 pages = sysconf(_SC_PAGE_SIZE);
+  int64 avpages = mem / sysconf(_SC_PAGE_SIZE);
+  // int64 avpages = sysconf(_SC_AVPHYS_PAGES);
   int64 pagesize = sysconf(_SC_PAGESIZE);
   int64 physsize = pages * pagesize;
   int64 avphyssize = avpages * pagesize;
@@ -602,17 +613,28 @@ bool OsLayer::AllocateTestMem(int64 length, uint64 paddr_base) {
         break;
       }
 
+      // The file /Library/Developer/CommandLineTools/SDKs/MacOSX11.3.sdk/System/Library/Frameworks/Kernel.framework/Versions/A/Headers/sys/mman.h
+      // In the above file, we can get many MM_* symbol are defined
+
       // 32 bit linux apps can only use ~1.4G of address space.
       // Use dynamic mapping for allocations larger than that.
       // Currently perf hit is ~10% for this.
       if (prefer_dynamic_mapping) {
         dynamic_mapped_shmem_ = true;
       } else {
-        // Do a full mapping here otherwise.
+// Do a full mapping here otherwise.
+// Checking the os ssytem environment is linux or mac osx
+// https://stackoverflow.com/questions/5919996/how-to-detect-reliably-mac-os-x-ios-linux-windows-in-c-preprocessor
+#if defined(__linux__)
         shmaddr = mmap(NULL, length, PROT_READ | PROT_WRITE,
                        MAP_SHARED | MAP_NORESERVE | MAP_LOCKED | MAP_POPULATE,
                        shm_object, 0);
-        if (shmaddr == reinterpret_cast<void*>(-1)) {
+#else
+        shmaddr = mmap(NULL, length, PROT_READ | PROT_WRITE,
+                       MAP_SHARED | MAP_NORESERVE,
+                       shm_object, 0);
+#endif
+        if (shmaddr == reinterpret_cast<void *>(-1)) {
           int err = errno;
           string errtxt = ErrorString(err);
           logprintf(0, "Log: failed to map shared "
@@ -651,9 +673,24 @@ bool OsLayer::AllocateTestMem(int64 length, uint64 paddr_base) {
       }
     }
     if (!mmapped_allocation_) {
-      // Use memalign to ensure that blocks are aligned enough for disk direct
-      // IO.
-      buf = static_cast<char*>(memalign(4096, length));
+      // There is no memalign function in mac osx and I used posix_memalign to replace.
+      // void * memalign(size_t boundary,size_t size)
+      // int post_memalign(void **memptr,size_t aligntment,size_t size)
+      // https://linux.die.net/man/3/memalign
+      // #include <malloc.h>
+      // void *memalign(size_t alignment, size_t size);
+      // #include <stdlib.h>
+      // int posix_memalign(void **memptr, size_t alignment, size_t size);
+      // https://www.unix.com/man-page/osx/3/posix_memalign/
+
+// Use memalign to ensure that blocks are aligned enough for disk direct
+// IO.
+#if defined(__linux__)
+      buf = static_cast<char *>(memalign(4096, length));
+#else
+      int err = posix_memalign((void **)&buf, 4096, length);
+      buf = static_cast<char *>(buf);
+#endif
       if (buf) {
         logprintf(0, "Log: Using memaligned allocation at %p.\n", buf);
       } else {
@@ -699,16 +736,21 @@ void OsLayer::FreeTestMem() {
   }
 }
 
-
 // Prepare the target memory. It may requre mapping in, or this may be a noop.
 void *OsLayer::PrepareTestMem(uint64 offset, uint64 length) {
   sat_assert((offset + length) <= testmemsize_);
   if (dynamic_mapped_shmem_) {
-    // TODO(nsanders): Check if we can support MAP_NONBLOCK,
-    // and evaluate performance hit from not using it.
-    void * mapping = mmap(NULL, length, PROT_READ | PROT_WRITE,
-                     MAP_SHARED | MAP_NORESERVE | MAP_LOCKED | MAP_POPULATE,
-                     shmid_, offset);
+// TODO(nsanders): Check if we can support MAP_NONBLOCK,
+// and evaluate performance hit from not using it.
+#if defined(__linux__)
+    void *mapping = mmap(NULL, length, PROT_READ | PROT_WRITE,
+                         MAP_SHARED | MAP_NORESERVE | MAP_LOCKED | MAP_POPULATE,
+                         shmid_, offset);
+#else
+    void *mapping = mmap(NULL, length, PROT_READ | PROT_WRITE,
+                         MAP_SHARED | MAP_NORESERVE,
+                         shmid_, offset);
+#endif
     if (mapping == MAP_FAILED) {
       string errtxt = ErrorString(errno);
       logprintf(0, "Process Error: PrepareTestMem mmap(%llx, %llx) failed. "
