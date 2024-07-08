@@ -26,14 +26,10 @@
 #include <string>
 
 #ifdef HAVE_CONFIG_H  // Built using autoconf
-#ifdef __ANDROID__
-#include "stressapptest_config_android.h"  // NOLINT
-#else
 #include "stressapptest_config.h"  // NOLINT
 #ifndef _LIBCPP_VERSION
 using namespace __gnu_cxx;  //NOLINT
 #endif  // _LIBCPP_VERSION
-#endif  // __ANDROID__
 using namespace std;
 
 typedef signed long long   int64;
