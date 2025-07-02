@@ -38,6 +38,8 @@
 
 #include <list>
 #include <string>
+#include <ctype.h>
+#include <dirent.h>
 
 // This file must work with autoconf on its public version,
 // so these includes are correct.
@@ -1184,6 +1186,8 @@ void Sat::InitializeThreads() {
   // Memory copy threads.
   AcquireWorkerLock();
 
+  BuildCpuList();
+
   logprintf(12, "Log: Starting worker threads\n");
   WorkerVector *memory_vector = new WorkerVector();
 
@@ -1234,11 +1238,8 @@ void Sat::InitializeThreads() {
       // Don't restrict thread location if we have more than one
       // thread per core. Not so good for performance.
       if (cpu_stress_threads_ + memory_threads_ <= cores) {
-        // Place a thread on alternating cores first.
-        // This assures interleaved core use with no overlap.
-        int nthcore = i;
-        int nthbit = (((2 * nthcore) % cores) +
-                      (((2 * nthcore) / cores) % 2)) % cores;
+        // Use primary cores first based on detected topology.
+        int nthbit = GetCpuFromOrder(i);
         cpu_set_t all_cores;
         cpuset_set_ab(&all_cores, 0, cores);
         if (!cpuset_isequal(&available_cpus, &all_cores)) {
@@ -1374,12 +1375,8 @@ void Sat::InitializeThreads() {
     thread->AvailableCpus(&available_cpus);
     int cores = cpuset_count(&available_cpus);
     if (cpu_stress_threads_ + memory_threads_ <= cores) {
-      // Place a thread on alternating cores first.
-      // Go in reverse order for CPU stress threads. This assures interleaved
-      // core use with no overlap.
-      int nthcore = (cores - 1) - i;
-      int nthbit = (((2 * nthcore) % cores) +
-                    (((2 * nthcore) / cores) % 2)) % cores;
+      // Use detected topology but assign in reverse order.
+      int nthbit = GetCpuFromOrder(cpu_order_.size() - 1 - i);
       cpu_set_t all_cores;
       cpuset_set_ab(&all_cores, 0, cores);
       if (!cpuset_isequal(&available_cpus, &all_cores)) {
@@ -1527,6 +1524,126 @@ int Sat::CacheLineSize() {
 #endif
   if (linesize > max_linesize) max_linesize = linesize;
   return max_linesize;
+}
+
+string Sat::FormatCpuList(const vector<int> &list) const {
+  string out;
+  for (size_t i = 0; i < list.size(); ++i) {
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%d", list[i]);
+    if (i)
+      out += ",";
+    out += buf;
+  }
+  return out;
+}
+
+int Sat::GetCpuFromOrder(int index) const {
+  if (cpu_order_.empty())
+    return index;
+  index %= cpu_order_.size();
+  if (index < 0)
+    index += cpu_order_.size();
+  return cpu_order_[index];
+}
+
+bool Sat::BuildCpuList() {
+  primary_cpus_.clear();
+  sibling_cpus_.clear();
+  cpu_order_.clear();
+
+  cpu_set_t mask;
+  CPU_ZERO(&mask);
+#ifdef HAVE_SCHED_GETAFFINITY
+  if (sched_getaffinity(0, sizeof(mask), &mask) != 0) {
+    logprintf(3, "Log: sched_getaffinity failed, using default cpu order\n");
+    int cores = CpuCount();
+    for (int i = 0; i < cores; ++i) {
+      int nthbit = (((2 * i) % cores) + (((2 * i) / cores) % 2)) % cores;
+      cpu_order_.push_back(nthbit);
+    }
+    primary_cpus_ = cpu_order_;
+    return false;
+  }
+#else
+  cpuset_set_ab(&mask, 0, CpuCount());
+#endif
+
+  DIR *dir = opendir("/sys/devices/system/cpu/");
+  if (!dir) {
+    logprintf(3, "Log: cannot open /sys/devices/system/cpu, using default cpu order\n");
+    int cores = cpuset_count(&mask);
+    for (int i = 0; i < cores; ++i) {
+      int nthbit = (((2 * i) % cores) + (((2 * i) / cores) % 2)) % cores;
+      cpu_order_.push_back(nthbit);
+    }
+    primary_cpus_ = cpu_order_;
+    return false;
+  }
+
+  map<pair<int,int>, vector<int> > core_map;
+  struct dirent *entry;
+  while ((entry = readdir(dir)) != NULL) {
+    if (strncmp(entry->d_name, "cpu", 3) != 0)
+      continue;
+    const char *p = entry->d_name + 3;
+    if (*p == '\0')
+      continue;
+    bool digits = true;
+    for (const char *c = p; *c; ++c) {
+      if (!isdigit(*c)) {
+        digits = false;
+        break;
+      }
+    }
+    if (!digits)
+      continue;
+    int cpu_id = atoi(p);
+    if (!CPU_ISSET(cpu_id, &mask))
+      continue;
+    char path[256];
+    int core_id = -1, pkg_id = -1;
+    snprintf(path, sizeof(path), "/sys/devices/system/cpu/%s/topology/core_id", entry->d_name);
+    ReadInt(path, &core_id);
+    snprintf(path, sizeof(path), "/sys/devices/system/cpu/%s/topology/physical_package_id", entry->d_name);
+    ReadInt(path, &pkg_id);
+    if (core_id == -1 || pkg_id == -1)
+      continue;
+    core_map[make_pair(pkg_id, core_id)].push_back(cpu_id);
+  }
+  closedir(dir);
+
+  if (core_map.empty()) {
+    int cores = cpuset_count(&mask);
+    for (int i = 0; i < cores; ++i) {
+      int nthbit = (((2 * i) % cores) + (((2 * i) / cores) % 2)) % cores;
+      cpu_order_.push_back(nthbit);
+    }
+    primary_cpus_ = cpu_order_;
+    return false;
+  }
+
+  for (map<pair<int,int>, vector<int> >::iterator it = core_map.begin();
+       it != core_map.end(); ++it) {
+    vector<int> &v = it->second;
+    sort(v.begin(), v.end());
+    if (!v.empty()) {
+      primary_cpus_.push_back(v[0]);
+      for (size_t i = 1; i < v.size(); ++i)
+        sibling_cpus_.push_back(v[i]);
+    }
+  }
+
+  sort(primary_cpus_.begin(), primary_cpus_.end());
+  sort(sibling_cpus_.begin(), sibling_cpus_.end());
+
+  cpu_order_.insert(cpu_order_.end(), primary_cpus_.begin(), primary_cpus_.end());
+  cpu_order_.insert(cpu_order_.end(), sibling_cpus_.begin(), sibling_cpus_.end());
+
+  logprintf(5, "Log: Primary cores: %s\n", FormatCpuList(primary_cpus_).c_str());
+  if (!sibling_cpus_.empty())
+    logprintf(5, "Log: Sibling cores: %s\n", FormatCpuList(sibling_cpus_).c_str());
+  return true;
 }
 
 // Notify and reap worker threads.

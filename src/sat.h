@@ -141,6 +141,12 @@ class Sat {
   int ReadInt(const char *filename, int *value);
   // Collect error counts from threads.
   int64 GetTotalErrorCount();
+  // Build CPU topology lists.
+  bool BuildCpuList();
+  // Format CPU list for logging.
+  std::string FormatCpuList(const std::vector<int> &list) const;
+  // Retrieve cpu number from ordered list.
+  int GetCpuFromOrder(int index) const;
 
   // Command line arguments.
   string cmdline_;
@@ -253,6 +259,11 @@ class Sat {
   int region_mode_;                   // What to do with NUMA hints?
   static const int kLocalNuma = 1;    // Target local memory.
   static const int kRemoteNuma = 2;   // Target remote memory.
+
+  // CPU topology information.
+  std::vector<int> primary_cpus_;
+  std::vector<int> sibling_cpus_;
+  std::vector<int> cpu_order_;
 
   // Results.
   int64 errorcount_;                  // Total hardware incidents seen.
