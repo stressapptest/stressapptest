@@ -848,7 +848,11 @@ void OsLayer::PciWrite(int fd, uint32 offset, uint32 value, int width) {
 // Open dev msr.
 int OsLayer::OpenMSR(uint32 core, uint32 address) {
   char buf[256];
+#if defined(ANDROID)
+  sprintf(pathname, "/dev/msr%d", cpu);
+#else
   snprintf(buf, sizeof(buf), "/dev/cpu/%d/msr", core);
+#endif
   int fd = open(buf, O_RDWR);
   if (fd < 0)
     return fd;
