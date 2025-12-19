@@ -824,11 +824,14 @@ void OsLayer::PciWrite(int fd, uint32 offset, uint32 value, int width) {
     case 8:
       sat_assert(&(datacast.l8) == reinterpret_cast<uint8*>(&datacast));
       datacast.l8 = value;
+      break;
     case 16:
       sat_assert(&(datacast.l16) == reinterpret_cast<uint16*>(&datacast));
       datacast.l16 = value;
+      break;
     case 32:
       datacast.l32 = value;
+      break;
   }
 
   if (lseek(fd, offset, SEEK_SET) < 0) {
